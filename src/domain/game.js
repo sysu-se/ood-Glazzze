@@ -130,6 +130,24 @@ export class Game {
   }
 
   /**
+   * 获取指定单元格的候选数
+   * @param {number} row
+   * @param {number} col
+   * @returns {number[]}
+   */
+  getCandidates(row, col) {
+    return this.currentSudoku.getCandidates(row, col);
+  }
+
+  /**
+   * 获取下一步可确定的提示
+   * @returns {{ row: number, col: number, value: number, candidates: number[] } | null}
+   */
+  getNextHint() {
+    return this.currentSudoku.getNextHint();
+  }
+
+  /**
    * 当前局面是否胜利：满盘且无冲突
    * @returns {boolean}
    */

@@ -49,6 +49,68 @@ export class Sudoku {
   }
 
   /**
+   * 获取指定单元格的候选数
+   * @param {number} row
+   * @param {number} col
+   * @returns {number[]}
+   */
+  getCandidates(row, col) {
+    this._assertCellPosition(row, col);
+
+    if (this.initialGrid[row][col] !== 0 || this.userMoves.has(this._cellKey(row, col))) {
+      return [];
+    }
+
+    const grid = this.getGrid();
+    const used = new Set();
+
+    for (let index = 0; index < 9; index++) {
+      used.add(grid[row][index]);
+      used.add(grid[index][col]);
+    }
+
+    const boxRow = Math.floor(row / 3) * 3;
+    const boxCol = Math.floor(col / 3) * 3;
+    for (let currentRow = boxRow; currentRow < boxRow + 3; currentRow++) {
+      for (let currentCol = boxCol; currentCol < boxCol + 3; currentCol++) {
+        used.add(grid[currentRow][currentCol]);
+      }
+    }
+
+    const candidates = [];
+    for (let value = 1; value <= 9; value++) {
+      if (!used.has(value)) {
+        candidates.push(value);
+      }
+    }
+
+    return candidates;
+  }
+
+  /**
+   * 获取下一步可确定的提示
+   * @returns {{ row: number, col: number, value: number, candidates: number[] } | null}
+   */
+  getNextHint() {
+    const grid = this.getGrid();
+
+    for (let row = 0; row < 9; row++) {
+      for (let col = 0; col < 9; col++) {
+        if (grid[row][col] !== 0) {
+          continue;
+        }
+
+        const candidates = this.getCandidates(row, col);
+        if (candidates.length === 1) {
+          return { row, col, value: candidates[0], candidates };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * 校验当前棋盘是否合法，并返回冲突单元格
    * @returns {{ valid: boolean, invalidCells: Array<{ row: number, col: number }> }}
    */
@@ -231,6 +293,16 @@ export class Sudoku {
           throw new Error(`Invalid ${label}: value out of range at row=${row}, col=${col}`);
         }
       }
+    }
+  }
+
+  /**
+   * 校验单元格位置
+   * @private
+   */
+  _assertCellPosition(row, col) {
+    if (!Number.isInteger(row) || !Number.isInteger(col) || row < 0 || row > 8 || col < 0 || col > 8) {
+      throw new Error(`Invalid cell position: row=${row}, col=${col}`);
     }
   }
 

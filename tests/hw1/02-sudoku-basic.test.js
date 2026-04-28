@@ -24,6 +24,21 @@ describe('HW1 sudoku basic behavior', () => {
     expect(grid[0][2]).toBe(4)
   })
 
+  it('getCandidates(row, col) returns legal candidates from the current board', async () => {
+    const { createSudoku } = await loadDomainApi()
+    const sudoku = createSudoku(makePuzzle())
+
+    expect(sudoku.getCandidates(0, 2)).toEqual([1, 2, 4])
+    expect(sudoku.getCandidates(0, 0)).toEqual([])
+  })
+
+  it('getNextHint() finds the first single-candidate cell when available', async () => {
+    const { createSudoku } = await loadDomainApi()
+    const sudoku = createSudoku(makePuzzle())
+
+    expect(sudoku.getNextHint()).toEqual({ row: 4, col: 4, value: 5, candidates: [5] })
+  })
+
   it('getGrid returns a 9x9 numeric grid', async () => {
     const { createSudoku } = await loadDomainApi()
     const sudoku = createSudoku(makePuzzle())

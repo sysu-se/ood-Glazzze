@@ -14,7 +14,6 @@
 import { writable, derived, get } from 'svelte/store';//典型Svelte 3 风格
 import { createGame, createSudoku, createGameFromJSON } from '../domain/index.js';
 import { generateSudoku } from '@sudoku/sudoku';
-import { solveSudoku } from '@sudoku/sudoku';
 import { decodeSencode, validateSencode } from '@sudoku/sencode';
 import { cursor } from '@sudoku/stores/cursor';
 import { candidates } from '@sudoku/stores/candidates';
@@ -32,19 +31,9 @@ export function createGameStore(options = {}) {
   // 如果没有提供初始棋盘，默认生成一局 easy 题面
   const { initialGrid = generateSudoku('easy') } = options;
 
-  function buildSolvedGrid(given) {
-    try {
-      return solveSudoku(given);
-    } catch (error) {
-      return null;
-    }
-  }
-  
   // 创建初始的 Sudoku 和 Game并持有
   const sudoku = createSudoku(initialGrid);
   const game = createGame({ sudoku });
-  let solvedGrid = buildSolvedGrid(initialGrid);
-  
   // 内部可写 store：持有当前的 Game 实例（典型Svelte 3 风格）
   const gameInstance = writable(game);
   const paused = writable(true);
@@ -143,7 +132,6 @@ export function createGameStore(options = {}) {
    * @param {number[][]} newInitialGrid - 新的初始棋盘
    */
   function newGame(newInitialGrid) {
-    solvedGrid = buildSolvedGrid(newInitialGrid);
     const newSudoku = createSudoku(newInitialGrid);
     const newGame = createGame({ sudoku: newSudoku });
     gameInstance.set(newGame);
@@ -225,7 +213,6 @@ export function createGameStore(options = {}) {
     try {
       const payload = JSON.parse(text);
       const restoredGame = createGameFromJSON(payload);
-      solvedGrid = buildSolvedGrid(restoredGame.getSudoku().getInitialGrid());
       gameInstance.set(restoredGame);
       resetSessionState();
       return;
@@ -257,9 +244,9 @@ export function createGameStore(options = {}) {
       }
 
       try {
-        const value = solvedGrid?.[row]?.[col] ?? 0;
-        if (value > 0) {
-          $game.guess({ row, col, value });
+        const candidates = $game.getCandidates(row, col);
+        if (candidates.length === 1) {
+          $game.guess({ row, col, value: candidates[0] });
           applied = true;
         }
       } catch (error) {

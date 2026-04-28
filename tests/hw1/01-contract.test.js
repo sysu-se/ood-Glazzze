@@ -15,6 +15,8 @@ describe('HW1 contract / exports', () => {
     const sudoku = createSudoku(makePuzzle())
 
     expect(typeof sudoku.getGrid).toBe('function')
+    expect(typeof sudoku.getCandidates).toBe('function')
+    expect(typeof sudoku.getNextHint).toBe('function')
     expect(typeof sudoku.guess).toBe('function')
     expect(typeof sudoku.clone).toBe('function')
     expect(typeof sudoku.toJSON).toBe('function')
@@ -28,6 +30,8 @@ describe('HW1 contract / exports', () => {
     const game = createGame({ sudoku: createSudoku(makePuzzle()) })
 
     expect(typeof game.getSudoku).toBe('function')
+    expect(typeof game.getCandidates).toBe('function')
+    expect(typeof game.getNextHint).toBe('function')
     expect(typeof game.guess).toBe('function')
     expect(typeof game.undo).toBe('function')
     expect(typeof game.redo).toBe('function')
