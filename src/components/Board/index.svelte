@@ -1,11 +1,18 @@
 <script>
 	import { BOX_SIZE } from '@sudoku/constants';
-	import { gamePaused } from '@sudoku/stores/game';
-	import { grid, userGrid, invalidCells } from '@sudoku/stores/grid';
 	import { settings } from '@sudoku/stores/settings';
 	import { cursor } from '@sudoku/stores/cursor';
 	import { candidates } from '@sudoku/stores/candidates';
 	import Cell from './Cell.svelte';
+	
+	// 接收 gameStore 作为 prop
+	export let gameStore;
+
+	// 先取出子 store，再用 $store 语法订阅（典型Svelte 3 风格）
+	$: gridStore = gameStore.grid;
+	$: givenGridStore = gameStore.givenGrid;
+	$: invalidCellsStore = gameStore.invalidCells;
+	$: pausedStore = gameStore.paused;
 
 	function isSelected(cursorStore, x, y) {
 		return cursorStore.x === x && cursorStore.y === y;
@@ -35,20 +42,20 @@
 	</div>
 	<div class="board-padding absolute inset-0 flex justify-center">
 
-		<div class="bg-white shadow-2xl rounded-xl overflow-hidden w-full h-full max-w-xl grid" class:bg-gray-200={$gamePaused}>
+		<div class="bg-white shadow-2xl rounded-xl overflow-hidden w-full h-full max-w-xl grid" class:bg-gray-200={$pausedStore}>
 
-			{#each $userGrid as row, y}
+			{#each $gridStore as row, y}
 				{#each row as value, x}
 					<Cell {value}
 					      cellY={y + 1}
 					      cellX={x + 1}
 					      candidates={$candidates[x + ',' + y]}
-					      disabled={$gamePaused}
+					      disabled={$pausedStore}
 					      selected={isSelected($cursor, x, y)}
-					      userNumber={$grid[y][x] === 0}
+					      userNumber={$givenGridStore[y][x] === 0}
 					      sameArea={$settings.highlightCells && !isSelected($cursor, x, y) && isSameArea($cursor, x, y)}
-					      sameNumber={$settings.highlightSame && value && !isSelected($cursor, x, y) && getValueAtCursor($userGrid, $cursor) === value}
-					      conflictingNumber={$settings.highlightConflicting && $grid[y][x] === 0 && $invalidCells.includes(x + ',' + y)} />
+					      sameNumber={$settings.highlightSame && value && !isSelected($cursor, x, y) && getValueAtCursor($gridStore, $cursor) === value}
+					      conflictingNumber={$settings.highlightConflicting && $givenGridStore[y][x] === 0 && $invalidCellsStore.includes(y + ',' + x)} />
 				{/each}
 			{/each}
 
