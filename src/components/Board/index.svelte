@@ -34,6 +34,10 @@
 
 		return gridStore[cursorStore.y][cursorStore.x];
 	}
+
+	function isInvalidCell(invalidCellsStore, x, y) {
+		return invalidCellsStore.some(cell => cell.row === y && cell.col === x);
+	}
 </script>
 
 <div class="board-padding relative z-10">
@@ -55,7 +59,7 @@
 					      userNumber={$givenGridStore[y][x] === 0}
 					      sameArea={$settings.highlightCells && !isSelected($cursor, x, y) && isSameArea($cursor, x, y)}
 					      sameNumber={$settings.highlightSame && value && !isSelected($cursor, x, y) && getValueAtCursor($gridStore, $cursor) === value}
-					      conflictingNumber={$settings.highlightConflicting && $givenGridStore[y][x] === 0 && $invalidCellsStore.includes(y + ',' + x)} />
+					      conflictingNumber={$settings.highlightConflicting && $givenGridStore[y][x] === 0 && isInvalidCell($invalidCellsStore, x, y)} />
 				{/each}
 			{/each}
 

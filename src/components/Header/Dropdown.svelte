@@ -16,7 +16,7 @@
 			title: 'New Game',
 			text: 'Start new game with difficulty "' + DIFFICULTIES[difficultyValue] + '"?',
 			button: 'Continue',
-			onHide: () => {},
+			onHide: gameStore.resume,
 			callback: () => {
 				difficulty.set(difficultyValue);
 				gameStore.startNew(difficultyValue);
@@ -32,7 +32,7 @@
 			title: 'Create Own',
 			text: 'Switch to the creator mode to create your own Sudoku puzzle?',
 			button: 'Continue',
-			onHide: () => {},
+			onHide: gameStore.resume,
 			callback: () => {
 				//game.startCreatorMode();
 			},
@@ -48,7 +48,7 @@
 			text: 'Please enter a game code (serialized JSON) or a puzzle code (sencode):',
 			fontMono: true,
 			button: 'Start',
-			onHide: () => {},
+			onHide: gameStore.resume,
 			callback: (value) => {
 				difficulty.setCustom();
 				gameStore.importCode(value);

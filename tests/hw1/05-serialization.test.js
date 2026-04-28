@@ -16,6 +16,22 @@ describe('HW1 serialization / deserialization', () => {
     expect(typeof restored.toString()).toBe('string')
   })
 
+  it('rejects restoring moves that alter given cells', async () => {
+    const { createSudokuFromJSON } = await loadDomainApi()
+
+    const illegalGridPayload = {
+      initialGrid: makePuzzle(),
+      userGrid: makePuzzle().map(row => [...row]),
+    }
+    illegalGridPayload.userGrid[0][0] = 0
+
+    expect(() => createSudokuFromJSON(illegalGridPayload)).toThrow(/cannot modify given cell/)
+    expect(() => createSudokuFromJSON({
+      initialGrid: makePuzzle(),
+      userMoves: [[0, 4]],
+    })).toThrow(/cannot modify given cell/)
+  })
+
   it('supports game round-trip serialization for the current board state', async () => {
     const { createGame, createGameFromJSON, createSudoku } = await loadDomainApi()
 

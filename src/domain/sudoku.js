@@ -50,12 +50,16 @@ export class Sudoku {
 
   /**
    * 校验当前棋盘是否合法，并返回冲突单元格
-   * @returns {{ valid: boolean, invalidCells: string[] }}
+   * @returns {{ valid: boolean, invalidCells: Array<{ row: number, col: number }> }}
    */
   //提供校验能力：当前棋盘是否合法，并返回冲突单元格
   validate() {
     const grid = this.getGrid();
     const invalid = new Set();
+
+    function markInvalid(row, col) {
+      invalid.add(`${row},${col}`);
+    }
 
     // 行冲突
     for (let row = 0; row < 9; row++) {
@@ -64,8 +68,8 @@ export class Sudoku {
         const value = grid[row][col];
         if (value !== 0) {
           if (seen.has(value)) {
-            invalid.add(`${row},${col}`);
-            invalid.add(`${row},${seen.get(value)}`);
+            markInvalid(row, col);
+            markInvalid(row, seen.get(value));
           } else {
             seen.set(value, col);
           }
@@ -80,8 +84,8 @@ export class Sudoku {
         const value = grid[row][col];
         if (value !== 0) {
           if (seen.has(value)) {
-            invalid.add(`${row},${col}`);
-            invalid.add(`${seen.get(value)},${col}`);
+            markInvalid(row, col);
+            markInvalid(seen.get(value), col);
           } else {
             seen.set(value, row);
           }
@@ -97,12 +101,12 @@ export class Sudoku {
           for (let col = boxCol * 3; col < boxCol * 3 + 3; col++) {
             const value = grid[row][col];
             if (value !== 0) {
-              const key = `${row},${col}`;
               if (seen.has(value)) {
-                invalid.add(key);
-                invalid.add(seen.get(value));
+                markInvalid(row, col);
+                const [seenRow, seenCol] = seen.get(value).split(',').map(Number);
+                markInvalid(seenRow, seenCol);
               } else {
-                seen.set(value, key);
+                seen.set(value, `${row},${col}`);
               }
             }
           }
@@ -112,7 +116,10 @@ export class Sudoku {
 
     return {
       valid: invalid.size === 0,
-      invalidCells: Array.from(invalid),
+      invalidCells: Array.from(invalid, key => {
+        const [row, col] = key.split(',').map(Number);
+        return { row, col };
+      }),
     };
   }
 
@@ -331,15 +338,28 @@ export function createSudokuFromJSON(json) {
 
   const sudoku = new Sudoku(json.initialGrid);
 
+  function assertCanRestoreMove(row, col, value, sourceLabel) {
+    if (sudoku.initialGrid[row][col] !== 0) {
+      throw new Error(`Invalid ${sourceLabel}: cannot modify given cell at row=${row}, col=${col}`);
+    }
+
+    sudoku.guess({ row, col, value });
+  }
+
   if (Array.isArray(json.userMoves)) {
-    for (const [key, value] of json.userMoves) {
+    for (const entry of json.userMoves) {
+      if (!Array.isArray(entry) || entry.length < 2) {
+        throw new Error('Invalid userMoves entry: expected [cellKey, value] tuple');
+      }
+
+      const [key, value] = entry;
       if (!Number.isInteger(key) || key < 0 || key > 80) {
         throw new Error(`Invalid userMoves key: ${key}`);
       }
 
       const row = Math.floor(key / 9);
       const col = key % 9;
-      sudoku.guess({ row, col, value });
+      assertCanRestoreMove(row, col, value, 'userMoves');
     }
   } else if (Array.isArray(json.userGrid)) {
     sudoku._assertGridShapeAndRange(json.userGrid, 'userGrid');
@@ -347,6 +367,10 @@ export function createSudokuFromJSON(json) {
     for (let row = 0; row < 9; row++) {
       for (let col = 0; col < 9; col++) {
         const value = json.userGrid[row][col];
+        if (sudoku.initialGrid[row][col] !== 0 && value !== sudoku.initialGrid[row][col]) {
+          throw new Error(`Invalid userGrid: cannot modify given cell at row=${row}, col=${col}`);
+        }
+
         if (value !== sudoku.initialGrid[row][col]) {
           sudoku.guess({ row, col, value });
         }

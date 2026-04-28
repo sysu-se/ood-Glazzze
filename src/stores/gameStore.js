@@ -11,11 +11,15 @@
 
 
 
-import { writable, derived } from 'svelte/store';//典型Svelte 3 风格
+import { writable, derived, get } from 'svelte/store';//典型Svelte 3 风格
 import { createGame, createSudoku, createGameFromJSON } from '../domain/index.js';
 import { generateSudoku } from '@sudoku/sudoku';
 import { solveSudoku } from '@sudoku/sudoku';
 import { decodeSencode, validateSencode } from '@sudoku/sencode';
+import { cursor } from '@sudoku/stores/cursor';
+import { candidates } from '@sudoku/stores/candidates';
+import { hints } from '@sudoku/stores/hints';
+import { notes } from '@sudoku/stores/notes';
 import { timer } from '@sudoku/stores/timer';
 
 /**
@@ -44,10 +48,6 @@ export function createGameStore(options = {}) {
   // 内部可写 store：持有当前的 Game 实例（典型Svelte 3 风格）
   const gameInstance = writable(game);
   const paused = writable(true);
-  let pausedValue = true;
-  paused.subscribe(value => {
-    pausedValue = value;
-  });
 
   function setPaused(nextPaused) {
     paused.set(nextPaused);
@@ -56,6 +56,15 @@ export function createGameStore(options = {}) {
     } else {
       timer.start();
     }
+  }
+
+  function resetSessionState() {
+    cursor.reset();
+    candidates.reset();
+    notes.reset();
+    hints.reset();
+    timer.reset();
+    setPaused(true);
   }
   
   //对外暴露可被 Svelte 消费的响应式状态
@@ -138,8 +147,7 @@ export function createGameStore(options = {}) {
     const newSudoku = createSudoku(newInitialGrid);
     const newGame = createGame({ sudoku: newSudoku });
     gameInstance.set(newGame);
-    timer.reset();
-    setPaused(true);
+    resetSessionState();
   }
 
   /**
@@ -168,7 +176,7 @@ export function createGameStore(options = {}) {
   }
 
   function togglePause() {
-    setPaused(!pausedValue);
+    setPaused(!get(paused));
   }
 
   /**
@@ -219,6 +227,7 @@ export function createGameStore(options = {}) {
       const restoredGame = createGameFromJSON(payload);
       solvedGrid = buildSolvedGrid(restoredGame.getSudoku().getInitialGrid());
       gameInstance.set(restoredGame);
+      resetSessionState();
       return;
     } catch (jsonError) {
       if (validateSencode(text)) {
@@ -267,9 +276,7 @@ export function createGameStore(options = {}) {
    * 获取当前 Game 实例（内部使用）
    */
   function getGame() {
-    let currentGame;
-    gameInstance.subscribe(g => { currentGame = g; })();
-    return currentGame;
+    return get(gameInstance);
   }
 
   // 返回给 UI 使用的接口
