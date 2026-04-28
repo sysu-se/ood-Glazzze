@@ -45,4 +45,22 @@ describe('HW1 serialization / deserialization', () => {
 
     expect(restored.getSudoku().getGrid()).toEqual(game.getSudoku().getGrid())
   })
+
+  it('restores an active explore session from game JSON', async () => {
+    const { createGame, createGameFromJSON, createSudoku } = await loadDomainApi()
+
+    const game = createGame({ sudoku: createSudoku(makePuzzle()) })
+    game.startExplore()
+    game.guess({ row: 0, col: 2, value: 5 })
+
+    const restored = createGameFromJSON(
+      JSON.parse(JSON.stringify(game.toJSON())),
+    )
+
+    expect(restored.isExploring()).toBe(true)
+    expect(restored.getExploreStatus().status).toBe(game.getExploreStatus().status)
+
+    expect(restored.backtrackExplore()).toBe(true)
+    expect(restored.getExploreStatus().status).toBe('active')
+  })
 })

@@ -32,6 +32,9 @@ export class Game {
 
     // 当前位置指针：表示已经应用了多少条操作
     this.currentIndex = 0;
+
+    // 探索会话：仅在进入 explore 模式后存在
+    this.exploreSession = null;
   }
 
   /**
@@ -73,6 +76,265 @@ export class Game {
       previousValue,
     });
     this.currentIndex++;
+
+    if (this.exploreSession) {
+      this._updateExploreStatusAfterMove();
+      this._syncCurrentExploreBranchSnapshot();
+    }
+  }
+
+  /**
+   * 进入探索模式
+   * @returns {boolean}
+   */
+  startExplore() {
+    if (this.exploreSession) {
+      return false;
+    }
+
+    const rootBranch = {
+      id: 0,
+      parentId: null,
+      label: 'root',
+      sudoku: this.currentSudoku.clone(),
+      history: this._cloneHistory(this.history),
+      index: this.currentIndex,
+    };
+
+    this.exploreSession = {
+      startSudoku: this.currentSudoku.clone(),
+      startHistory: this._cloneHistory(this.history),
+      startIndex: this.currentIndex,
+      failedFingerprints: new Set(),
+      status: 'active',
+      branches: new Map([[rootBranch.id, rootBranch]]),
+      currentBranchId: rootBranch.id,
+      nextBranchId: 1,
+    };
+
+    return true;
+  }
+
+  /**
+   * 当前是否处于探索模式
+   * @returns {boolean}
+   */
+  isExploring() {
+    return this.exploreSession !== null;
+  }
+
+  /**
+   * 回溯到本次探索的起点
+   * @returns {boolean}
+   */
+  backtrackExplore() {
+    if (!this.exploreSession) {
+      return false;
+    }
+
+    this.currentSudoku = this.exploreSession.startSudoku.clone();
+    this.history = this._cloneHistory(this.exploreSession.startHistory);
+    this.currentIndex = this.exploreSession.startIndex;
+    this.exploreSession.status = 'active';
+    this.exploreSession.currentBranchId = 0;
+    this._syncCurrentExploreBranchSnapshot();
+
+    return true;
+  }
+
+  /**
+   * 探索模式内是否可撤销
+   * @returns {boolean}
+   */
+  canExploreUndo() {
+    return !!this.exploreSession && this.currentIndex > this.exploreSession.startIndex;
+  }
+
+  /**
+   * 探索模式内是否可重做
+   * @returns {boolean}
+   */
+  canExploreRedo() {
+    return !!this.exploreSession && this.currentIndex < this.history.length;
+  }
+
+  /**
+   * 探索模式内撤销（不会越过探索起点）
+   * @returns {boolean}
+   */
+  exploreUndo() {
+    if (!this.canExploreUndo()) {
+      return false;
+    }
+
+    const operation = this.history[this.currentIndex - 1];
+    this.currentSudoku.guess({
+      row: operation.move.row,
+      col: operation.move.col,
+      value: operation.previousValue,
+    });
+    this.currentIndex--;
+    this._refreshExploreStatusAfterTimelineMove();
+    this._syncCurrentExploreBranchSnapshot();
+
+    return true;
+  }
+
+  /**
+   * 探索模式内重做
+   * @returns {boolean}
+   */
+  exploreRedo() {
+    if (!this.canExploreRedo()) {
+      return false;
+    }
+
+    const operation = this.history[this.currentIndex];
+    this.currentSudoku.guess({
+      row: operation.move.row,
+      col: operation.move.col,
+      value: operation.move.value,
+    });
+    this.currentIndex++;
+    this._refreshExploreStatusAfterTimelineMove();
+    this._syncCurrentExploreBranchSnapshot();
+
+    return true;
+  }
+
+  /**
+   * 从当前局面创建探索分支
+   * @param {string} label
+   * @returns {number|null}
+   */
+  createExploreBranch(label = '') {
+    if (!this.exploreSession) {
+      return null;
+    }
+
+    const branchId = this.exploreSession.nextBranchId++;
+    this.exploreSession.branches.set(branchId, {
+      id: branchId,
+      parentId: this.exploreSession.currentBranchId,
+      label: typeof label === 'string' && label.trim() ? label.trim() : `branch-${branchId}`,
+      sudoku: this.currentSudoku.clone(),
+      history: this._cloneHistory(this.history),
+      index: this.currentIndex,
+    });
+
+    return branchId;
+  }
+
+  /**
+   * 切换到指定探索分支
+   * @param {number} branchId
+   * @returns {boolean}
+   */
+  switchExploreBranch(branchId) {
+    if (!this.exploreSession || !Number.isInteger(branchId)) {
+      return false;
+    }
+
+    const branch = this.exploreSession.branches.get(branchId);
+    if (!branch) {
+      return false;
+    }
+
+    this.currentSudoku = branch.sudoku.clone();
+    this.history = this._cloneHistory(branch.history);
+    this.currentIndex = branch.index;
+    this.exploreSession.currentBranchId = branchId;
+    this._refreshExploreStatusAfterTimelineMove();
+
+    return true;
+  }
+
+  /**
+   * 列出探索分支树（扁平结构）
+   * @returns {Array<{id:number,parentId:number|null,label:string,current:boolean}>}
+   */
+  listExploreBranches() {
+    if (!this.exploreSession) {
+      return [];
+    }
+
+    return Array.from(this.exploreSession.branches.values())
+      .sort((a, b) => a.id - b.id)
+      .map(branch => ({
+        id: branch.id,
+        parentId: branch.parentId,
+        label: branch.label,
+        current: branch.id === this.exploreSession.currentBranchId,
+      }));
+  }
+
+  /**
+   * 提交探索结果：保留当前局面并退出探索模式
+   * @returns {boolean}
+   */
+  commitExplore() {
+    if (!this.exploreSession) {
+      return false;
+    }
+
+    if (!this.currentSudoku.validate().valid) {
+      return false;
+    }
+
+    this._syncCurrentExploreBranchSnapshot();
+
+    this.exploreSession = null;
+    return true;
+  }
+
+  /**
+   * 放弃探索结果：恢复到探索起点并退出探索模式
+   * @returns {boolean}
+   */
+  cancelExplore() {
+    if (!this.exploreSession) {
+      return false;
+    }
+
+    this.currentSudoku = this.exploreSession.startSudoku.clone();
+    this.history = this._cloneHistory(this.exploreSession.startHistory);
+    this.currentIndex = this.exploreSession.startIndex;
+    this.exploreSession = null;
+
+    return true;
+  }
+
+  /**
+   * 获取探索状态
+   * @returns {{ active: boolean, status: string, hasConflict: boolean, revisitedFailedPath: boolean, startIndex: number|null }}
+   */
+  getExploreStatus() {
+    if (!this.exploreSession) {
+      return {
+        active: false,
+        status: 'idle',
+        hasConflict: false,
+        revisitedFailedPath: false,
+        startIndex: null,
+        currentBranchId: null,
+        branchCount: 0,
+        canExploreUndo: false,
+        canExploreRedo: false,
+      };
+    }
+
+    const status = this.exploreSession.status;
+    return {
+      active: true,
+      status,
+      hasConflict: status === 'conflict' || status === 'revisited-failed',
+      revisitedFailedPath: status === 'revisited-failed',
+      startIndex: this.exploreSession.startIndex,
+      currentBranchId: this.exploreSession.currentBranchId,
+      branchCount: this.exploreSession.branches.size,
+      canExploreUndo: this.canExploreUndo(),
+      canExploreRedo: this.canExploreRedo(),
+    };
   }
 
   /**
@@ -87,6 +349,9 @@ export class Game {
         value: operation.previousValue,
       });
       this.currentIndex--;
+
+      this._refreshExploreStatusAfterTimelineMove();
+      this._syncCurrentExploreBranchSnapshot();
     }
   }
 
@@ -102,6 +367,9 @@ export class Game {
         value: operation.move.value,
       });
       this.currentIndex++;
+
+      this._refreshExploreStatusAfterTimelineMove();
+      this._syncCurrentExploreBranchSnapshot();
     }
   }
 
@@ -140,11 +408,38 @@ export class Game {
   }
 
   /**
+   * 获取单元格提示（含解释）
+   * @param {number} row
+   * @param {number} col
+   * @returns {{ row: number, col: number, candidates: number[], value: number|null, mode: string, reason: string }}
+   */
+  getCellHint(row, col) {
+    return this.currentSudoku.getCellHint(row, col);
+  }
+
+  /**
    * 获取下一步可确定的提示
    * @returns {{ row: number, col: number, value: number, candidates: number[] } | null}
    */
   getNextHint() {
     return this.currentSudoku.getNextHint();
+  }
+
+  /**
+   * 生成供 AI Agent 使用的上下文
+   * @returns {{ grid: number[][], nextHint: object|null, explore: object, prompt: string }}
+   */
+  buildAiAssistContext() {
+    const grid = this.currentSudoku.getGrid();
+    const nextHint = this.getNextHint();
+    const explore = this.getExploreStatus();
+
+    return {
+      grid,
+      nextHint,
+      explore,
+      prompt: '请基于当前数独局面给出下一步建议，并简要解释原因。若存在冲突，请指出冲突位置。',
+    };
   }
 
   /**
@@ -181,6 +476,7 @@ export class Game {
         previousValue: operation.previousValue,
       })),
       currentIndex: this.currentIndex,
+      explore: this._serializeExploreSession(),
     };
   }
 
@@ -189,7 +485,123 @@ export class Game {
    * @returns {string}
    */
   toString() {
-    return `Game(currentIndex: ${this.currentIndex}, historyLength: ${this.history.length})\n${this.currentSudoku.toString()}`;
+    const mode = this.exploreSession ? this.exploreSession.status : 'idle';
+    return `Game(currentIndex: ${this.currentIndex}, historyLength: ${this.history.length}, explore: ${mode})\n${this.currentSudoku.toString()}`;
+  }
+
+  /**
+   * 更新探索状态（在探索中的每次实际落子后）
+   * @private
+   */
+  _updateExploreStatusAfterMove() {
+    const fingerprint = this._gridFingerprint(this.currentSudoku.getGrid());
+    const isConflict = !this.currentSudoku.validate().valid;
+
+    if (!isConflict) {
+      this.exploreSession.status = 'active';
+      return;
+    }
+
+    if (this.exploreSession.failedFingerprints.has(fingerprint)) {
+      this.exploreSession.status = 'revisited-failed';
+      return;
+    }
+
+    this.exploreSession.failedFingerprints.add(fingerprint);
+    this.exploreSession.status = 'conflict';
+  }
+
+  /**
+   * 在 undo/redo 等时间线跳转后刷新探索状态
+   * @private
+   */
+  _refreshExploreStatusAfterTimelineMove() {
+    if (!this.exploreSession) {
+      return;
+    }
+
+    const fingerprint = this._gridFingerprint(this.currentSudoku.getGrid());
+    const isConflict = !this.currentSudoku.validate().valid;
+
+    if (!isConflict) {
+      this.exploreSession.status = 'active';
+      return;
+    }
+
+    this.exploreSession.status = this.exploreSession.failedFingerprints.has(fingerprint)
+      ? 'revisited-failed'
+      : 'conflict';
+  }
+
+  /**
+   * 序列化探索会话
+   * @private
+   */
+  _serializeExploreSession() {
+    if (!this.exploreSession) {
+      return {
+        active: false,
+        status: 'idle',
+      };
+    }
+
+    return {
+      active: true,
+      status: this.exploreSession.status,
+      startSudoku: this.exploreSession.startSudoku.toJSON(),
+      startHistory: this._cloneHistory(this.exploreSession.startHistory),
+      startIndex: this.exploreSession.startIndex,
+      failedFingerprints: Array.from(this.exploreSession.failedFingerprints),
+      currentBranchId: this.exploreSession.currentBranchId,
+      nextBranchId: this.exploreSession.nextBranchId,
+      branches: Array.from(this.exploreSession.branches.values()).map(branch => ({
+        id: branch.id,
+        parentId: branch.parentId,
+        label: branch.label,
+        sudoku: branch.sudoku.toJSON(),
+        history: this._cloneHistory(branch.history),
+        index: branch.index,
+      })),
+    };
+  }
+
+  /**
+   * 将当前局面写回当前探索分支快照
+   * @private
+   */
+  _syncCurrentExploreBranchSnapshot() {
+    if (!this.exploreSession) {
+      return;
+    }
+
+    const currentBranch = this.exploreSession.branches.get(this.exploreSession.currentBranchId);
+    if (!currentBranch) {
+      return;
+    }
+
+    currentBranch.sudoku = this.currentSudoku.clone();
+    currentBranch.history = this._cloneHistory(this.history);
+    currentBranch.index = this.currentIndex;
+  }
+
+  /**
+   * 克隆历史记录
+   * @private
+   */
+  _cloneHistory(history) {
+    return history.map(operation => ({
+      type: operation.type,
+      move: { ...operation.move },
+      previousValue: operation.previousValue,
+    }));
+  }
+
+  /**
+   * 为棋盘生成稳定签名
+   * @private
+   */
+  _gridFingerprint(grid) {
+    return grid.flat().join('');
   }
 }
 
@@ -268,6 +680,8 @@ export function createGameFromJSON(json) {
       game.currentSudoku.guess(operation.move);
     }
 
+    restoreExploreSessionIfPresent(game, json.explore);
+
     return game;
   }
 
@@ -316,8 +730,98 @@ export function createGameFromJSON(json) {
       game.currentSudoku.guess(game.history[index].move);
     }
 
+    restoreExploreSessionIfPresent(game, json.explore);
+
     return game;
   }
 
   throw new Error('Invalid Game JSON payload: unsupported history format');
+}
+
+function restoreExploreSessionIfPresent(game, exploreJson) {
+  if (!exploreJson || typeof exploreJson !== 'object' || exploreJson.active !== true) {
+    return;
+  }
+
+  if (!Number.isInteger(exploreJson.startIndex) || exploreJson.startIndex < 0 || exploreJson.startIndex > game.history.length) {
+    throw new Error('Invalid Game JSON payload: explore.startIndex out of bounds');
+  }
+
+  const startSudoku = createSudokuFromJSON(exploreJson.startSudoku);
+  const startHistory = Array.isArray(exploreJson.startHistory)
+    ? exploreJson.startHistory.map(operation => {
+      if (!operation || typeof operation !== 'object' || operation.type !== 'guess' || !operation.move) {
+        throw new Error('Invalid Game JSON payload: malformed explore.startHistory operation');
+      }
+
+      const { row, col, value } = operation.move;
+      if (!Number.isInteger(row) || !Number.isInteger(col) || row < 0 || row > 8 || col < 0 || col > 8) {
+        throw new Error('Invalid Game JSON payload: explore move position out of range');
+      }
+      if (!Number.isInteger(value) || value < 0 || value > 9) {
+        throw new Error('Invalid Game JSON payload: explore move value out of range');
+      }
+      if (!Number.isInteger(operation.previousValue) || operation.previousValue < 0 || operation.previousValue > 9) {
+        throw new Error('Invalid Game JSON payload: explore previousValue out of range');
+      }
+
+      return {
+        type: 'guess',
+        move: { ...operation.move },
+        previousValue: operation.previousValue,
+      };
+    })
+    : [];
+
+  const failedFingerprints = Array.isArray(exploreJson.failedFingerprints)
+    ? new Set(exploreJson.failedFingerprints.filter(item => typeof item === 'string'))
+    : new Set();
+
+  const allowedStatus = new Set(['active', 'conflict', 'revisited-failed']);
+  const status = allowedStatus.has(exploreJson.status) ? exploreJson.status : 'active';
+
+  const branches = new Map();
+  let currentBranchId = 0;
+  let nextBranchId = 1;
+
+  if (Array.isArray(exploreJson.branches)) {
+    for (const b of exploreJson.branches) {
+      if (!b || typeof b !== 'object' || !Number.isInteger(b.id)) continue;
+      const branchSudoku = createSudokuFromJSON(b.sudoku);
+      branches.set(b.id, {
+        id: b.id,
+        parentId: typeof b.parentId === 'number' ? b.parentId : null,
+        label: String(b.label || `branch-${b.id}`),
+        sudoku: branchSudoku,
+        history: Array.isArray(b.history) ? b.history.map(op => ({ ...op })) : [],
+        index: Number.isInteger(b.index) ? b.index : exploreJson.startIndex,
+      });
+      currentBranchId = b.id === exploreJson.currentBranchId ? b.id : currentBranchId;
+      nextBranchId = Math.max(nextBranchId, b.id + 1);
+    }
+  }
+
+  if (!branches.size) {
+    branches.set(0, {
+      id: 0,
+      parentId: null,
+      label: 'root',
+      sudoku: startSudoku.clone(),
+      history: startHistory.slice(),
+      index: exploreJson.startIndex,
+    });
+    currentBranchId = 0;
+    nextBranchId = 1;
+  }
+
+  game.exploreSession = {
+    startSudoku,
+    startHistory,
+    startIndex: exploreJson.startIndex,
+    failedFingerprints,
+    status,
+    branches,
+    currentBranchId,
+    nextBranchId,
+  };
 }

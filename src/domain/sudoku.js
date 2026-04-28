@@ -88,6 +88,60 @@ export class Sudoku {
   }
 
   /**
+   * 获取某个格子的提示详情（含解释）
+   * @param {number} row
+   * @param {number} col
+   * @returns {{ row: number, col: number, candidates: number[], value: number|null, mode: string, reason: string }}
+   */
+  getCellHint(row, col) {
+    this._assertCellPosition(row, col);
+
+    const grid = this.getGrid();
+    if (grid[row][col] !== 0) {
+      return {
+        row,
+        col,
+        candidates: [],
+        value: null,
+        mode: 'filled',
+        reason: '该单元格已经有值，无需提示。',
+      };
+    }
+
+    const candidates = this.getCandidates(row, col);
+    if (candidates.length === 0) {
+      return {
+        row,
+        col,
+        candidates,
+        value: null,
+        mode: 'conflict',
+        reason: '该单元格无合法候选，当前局面存在冲突。',
+      };
+    }
+
+    if (candidates.length === 1) {
+      return {
+        row,
+        col,
+        candidates,
+        value: candidates[0],
+        mode: 'single',
+        reason: `该单元格在行、列、宫约束下仅剩候选 ${candidates[0]}。`,
+      };
+    }
+
+    return {
+      row,
+      col,
+      candidates,
+      value: null,
+      mode: 'candidates',
+      reason: `该单元格当前有 ${candidates.length} 个候选：${candidates.join(', ')}。`,
+    };
+  }
+
+  /**
    * 获取下一步可确定的提示
    * @returns {{ row: number, col: number, value: number, candidates: number[] } | null}
    */
@@ -102,7 +156,12 @@ export class Sudoku {
 
         const candidates = this.getCandidates(row, col);
         if (candidates.length === 1) {
-          return { row, col, value: candidates[0], candidates };
+          return {
+            row,
+            col,
+            value: candidates[0],
+            candidates,
+          };
         }
       }
     }

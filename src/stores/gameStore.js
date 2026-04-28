@@ -78,6 +78,9 @@ export function createGameStore(options = {}) {
   
   // 响应式 store：游戏是否已赢
   const won = derived(gameInstance, $game => $game.isWon());
+
+  // 响应式 store：探索模式状态
+  const exploreStatus = derived(gameInstance, $game => $game.getExploreStatus());
   
   //canUndo/canRedo 也是由领域对象派生，按钮状态会联动刷新
   // 响应式 store：是否可以撤销
@@ -165,6 +168,113 @@ export function createGameStore(options = {}) {
 
   function togglePause() {
     setPaused(!get(paused));
+  }
+
+  /**
+   * UI 命令：进入探索模式
+   * @returns {boolean}
+   */
+  function startExplore() {
+    let started = false;
+    gameInstance.update($game => {
+      started = $game.startExplore();
+      return $game;
+    });
+    return started;
+  }
+
+  /**
+   * UI 命令：回溯到探索起点
+   * @returns {boolean}
+   */
+  function backtrackExplore() {
+    let backtracked = false;
+    gameInstance.update($game => {
+      backtracked = $game.backtrackExplore();
+      return $game;
+    });
+    return backtracked;
+  }
+
+  /**
+   * UI 命令：探索内撤销
+   */
+  function exploreUndo() {
+    let ok = false;
+    gameInstance.update($game => {
+      ok = $game.exploreUndo();
+      return $game;
+    });
+    return ok;
+  }
+
+  /**
+   * UI 命令：探索内重做
+   */
+  function exploreRedo() {
+    let ok = false;
+    gameInstance.update($game => {
+      ok = $game.exploreRedo();
+      return $game;
+    });
+    return ok;
+  }
+
+  /**
+   * UI 命令：创建探索分支
+   */
+  function createExploreBranch(label) {
+    let id = null;
+    gameInstance.update($game => {
+      id = $game.createExploreBranch(label);
+      return $game;
+    });
+    return id;
+  }
+
+  /**
+   * UI 命令：切换探索分支
+   */
+  function switchExploreBranch(id) {
+    let ok = false;
+    gameInstance.update($game => {
+      ok = $game.switchExploreBranch(id);
+      return $game;
+    });
+    return ok;
+  }
+
+  /**
+   * UI 查询：列出分支
+   */
+  function listExploreBranches() {
+    return get(gameInstance).listExploreBranches();
+  }
+
+  /**
+   * UI 命令：提交探索结果并退出探索模式
+   * @returns {boolean}
+   */
+  function commitExplore() {
+    let committed = false;
+    gameInstance.update($game => {
+      committed = $game.commitExplore();
+      return $game;
+    });
+    return committed;
+  }
+
+  /**
+   * UI 命令：放弃探索结果并退出探索模式
+   * @returns {boolean}
+   */
+  function cancelExplore() {
+    let cancelled = false;
+    gameInstance.update($game => {
+      cancelled = $game.cancelExplore();
+      return $game;
+    });
+    return cancelled;
   }
 
   /**
@@ -274,6 +384,7 @@ export function createGameStore(options = {}) {
     givenGrid: { subscribe: givenGrid.subscribe },
     invalidCells: { subscribe: invalidCells.subscribe },
     won: { subscribe: won.subscribe },
+    exploreStatus: { subscribe: exploreStatus.subscribe },
     paused: { subscribe: paused.subscribe },
     canUndo: { subscribe: canUndo.subscribe },
     canRedo: { subscribe: canRedo.subscribe },
@@ -289,6 +400,15 @@ export function createGameStore(options = {}) {
     pause,
     resume,
     togglePause,
+    startExplore,
+    backtrackExplore,
+    commitExplore,
+    cancelExplore,
+    exploreUndo,
+    exploreRedo,
+    createExploreBranch,
+    switchExploreBranch,
+    listExploreBranches,
     serialize,
     canImportCode,
     importCode,
