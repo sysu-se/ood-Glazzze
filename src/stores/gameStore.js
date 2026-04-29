@@ -13,6 +13,7 @@
 
 import { writable, derived, get } from 'svelte/store';//典型Svelte 3 风格
 import { createGame, createSudoku, createGameFromJSON } from '../domain/index.js';
+import { generateHintExplanation } from '../domain/agent.js';
 import { generateSudoku, solveSudoku } from '@sudoku/sudoku';
 import { decodeSencode, validateSencode } from '@sudoku/sencode';
 import { cursor } from '@sudoku/stores/cursor';
@@ -40,6 +41,8 @@ export function createGameStore(options = {}) {
   const candidateHintsEnabled = writable(false);
   const candidateHintTarget = writable(null);
   const highlightedNextHint = writable(null);
+  // explanation state for hint explanations (由本地 Agent 生成)
+  const explanation = writable(null);
 
   function setPaused(nextPaused) {
     paused.set(nextPaused);
@@ -410,8 +413,27 @@ export function createGameStore(options = {}) {
       return $game;
     });
 
+    // 触发解释生成（不改变提示的应用逻辑）
+    try {
+      explainHint(row, col);
+    } catch (e) {
+      // ignore
+    }
+
     return applied;
   }
+
+  // 调用本地 AI Agent 生成提示解释并保存在 explanation store
+  function explainHint(row, col) {
+    try {
+      const expl = generateHintExplanation(getGame(), row, col);
+      explanation.set({ row, col, text: expl });
+    } catch (e) {
+      explanation.set({ row, col, text: '无法生成解释' });
+    }
+  }
+
+  function closeExplanation() { explanation.set(null); }
 
   function enableCandidateHints(row, col) {
     candidateHintsEnabled.set(true);
@@ -447,6 +469,7 @@ export function createGameStore(options = {}) {
     candidateHintsEnabled: { subscribe: candidateHintsEnabled.subscribe },
     candidateHintTarget: { subscribe: candidateHintTarget.subscribe },
     highlightedNextHint: { subscribe: highlightedNextHint.subscribe },
+    explanation: { subscribe: explanation.subscribe },
     
     // === 命令方法 ===
     // UI 调用这些方法来修改游戏状态
@@ -474,6 +497,8 @@ export function createGameStore(options = {}) {
     applyHint,
     enableCandidateHints,
     highlightNextHint,
+    explainHint,
+    closeExplanation,
     
     // === 内部访问 ===
     // 测试或高级使用场景

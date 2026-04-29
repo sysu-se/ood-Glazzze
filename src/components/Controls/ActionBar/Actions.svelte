@@ -40,6 +40,9 @@
 
 		gameStore.enableCandidateHints($cursor.y, $cursor.x);
 		hints.useHint();
+
+		// 生成并显示解释（侧边栏）
+		if (gameStore && gameStore.explainHint) gameStore.explainHint($cursor.y, $cursor.x);
 	}
 
 	function handleNextHintPosition() {
@@ -49,6 +52,8 @@
 
 		gameStore.highlightNextHint($nextHintStore.row, $nextHintStore.col);
 		hints.useHint();
+
+		if (gameStore && gameStore.explainHint) gameStore.explainHint($nextHintStore.row, $nextHintStore.col);
 	}
 
 	function handleNextHintAnswer() {
@@ -59,6 +64,8 @@
 		gameStore.highlightNextHint($nextHintStore.row, $nextHintStore.col);
 		const applied = gameStore.applyHint($nextHintStore.row, $nextHintStore.col);
 		consumeHintIfPossible(applied);
+
+		if (gameStore && gameStore.explainHint) gameStore.explainHint($nextHintStore.row, $nextHintStore.col);
 	}
 
 	function handleExploreToggle(event) {
