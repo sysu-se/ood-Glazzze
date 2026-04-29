@@ -61,6 +61,7 @@ export class Sudoku {
       return [];
     }
 
+    // 候选数的计算属于 Sudoku 本体：只基于当前棋盘约束推导，不依赖 UI。
     const grid = this.getGrid();
     const used = new Set();
 
@@ -146,6 +147,7 @@ export class Sudoku {
    * @returns {{ row: number, col: number, value: number, candidates: number[] } | null}
    */
   getNextHint() {
+    // 下一步提示也由 Sudoku 直接推导：找到第一个只有唯一候选数的空格。
     const grid = this.getGrid();
 
     for (let row = 0; row < 9; row++) {

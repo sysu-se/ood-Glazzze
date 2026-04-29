@@ -57,4 +57,92 @@ describe('HW1 game store session reset', () => {
     expect(readStore(usedHints)).toBe(0)
     expect(readStore(gameStore.paused)).toBe(true)
   })
+
+  it('applyHint fills the selected cell even when it has multiple candidates', async () => {
+    globalThis.localStorage = createLocalStorageStub()
+    globalThis.localStorage.setItem('settings', JSON.stringify(DEFAULT_SETTINGS))
+
+    const { makePuzzle } = await import('./helpers/domain-api.js')
+    const { createGameStore } = await import('../../src/stores/gameStore.js')
+
+    const gameStore = createGameStore({ initialGrid: makePuzzle() })
+
+    const applied = gameStore.applyHint(0, 2)
+
+    expect(applied).toBe(true)
+    expect(readStore(gameStore.grid)[0][2]).toBe(4)
+  })
+
+  it('exposes computed candidates and next hint for the UI', async () => {
+    globalThis.localStorage = createLocalStorageStub()
+    globalThis.localStorage.setItem('settings', JSON.stringify(DEFAULT_SETTINGS))
+
+    const { makePuzzle } = await import('./helpers/domain-api.js')
+    const { createGameStore } = await import('../../src/stores/gameStore.js')
+
+    const gameStore = createGameStore({ initialGrid: makePuzzle() })
+
+    const candidates = readStore(gameStore.computedCandidates)
+    const nextHint = readStore(gameStore.nextHint)
+
+    expect(candidates['2,0']).toEqual([1, 2, 4])
+    expect(nextHint).toEqual({ row: 4, col: 4, value: 5, candidates: [5] })
+  })
+
+  it('toggles candidate hint mode and highlighted next hint state', async () => {
+    globalThis.localStorage = createLocalStorageStub()
+    globalThis.localStorage.setItem('settings', JSON.stringify(DEFAULT_SETTINGS))
+
+    const { makePuzzle } = await import('./helpers/domain-api.js')
+    const { createGameStore } = await import('../../src/stores/gameStore.js')
+
+    const gameStore = createGameStore({ initialGrid: makePuzzle() })
+
+    expect(readStore(gameStore.candidateHintsEnabled)).toBe(false)
+    expect(readStore(gameStore.highlightedNextHint)).toBeNull()
+
+    gameStore.enableCandidateHints()
+    expect(readStore(gameStore.candidateHintsEnabled)).toBe(true)
+    expect(readStore(gameStore.highlightedNextHint)).toBeNull()
+
+    gameStore.highlightNextHint(4, 4)
+      expect(readStore(gameStore.candidateHintsEnabled)).toBe(true)
+    expect(readStore(gameStore.highlightedNextHint)).toEqual({ row: 4, col: 4 })
+  })
+
+  it('locks candidate hints to the clicked cell target', async () => {
+    globalThis.localStorage = createLocalStorageStub()
+    globalThis.localStorage.setItem('settings', JSON.stringify(DEFAULT_SETTINGS))
+
+    const { makePuzzle } = await import('./helpers/domain-api.js')
+    const { createGameStore } = await import('../../src/stores/gameStore.js')
+    const { cursor } = await import('../../src/node_modules/@sudoku/stores/cursor.js')
+
+    const gameStore = createGameStore({ initialGrid: makePuzzle() })
+
+    cursor.set(2, 0)
+    gameStore.enableCandidateHints(0, 2)
+
+    expect(readStore(gameStore.candidateHintTarget)).toEqual({ row: 0, col: 2 })
+
+    cursor.set(4, 4)
+    expect(readStore(gameStore.candidateHintTarget)).toEqual({ row: 0, col: 2 })
+  })
+
+  it('keeps candidate hints visible after showing next hint', async () => {
+    globalThis.localStorage = createLocalStorageStub()
+    globalThis.localStorage.setItem('settings', JSON.stringify(DEFAULT_SETTINGS))
+
+    const { makePuzzle } = await import('./helpers/domain-api.js')
+    const { createGameStore } = await import('../../src/stores/gameStore.js')
+
+    const gameStore = createGameStore({ initialGrid: makePuzzle() })
+
+    gameStore.enableCandidateHints(0, 2)
+    gameStore.highlightNextHint(4, 4)
+
+    expect(readStore(gameStore.candidateHintsEnabled)).toBe(true)
+    expect(readStore(gameStore.candidateHintTarget)).toEqual({ row: 0, col: 2 })
+    expect(readStore(gameStore.highlightedNextHint)).toEqual({ row: 4, col: 4 })
+  })
 })

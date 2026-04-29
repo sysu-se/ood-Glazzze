@@ -8,6 +8,10 @@
 	export let cellX;
 	export let cellY;
 	export let candidates;
+export let computedCandidates;
+	export let candidateHintsEnabled = false;
+	export let candidateHintTarget = null;
+export let isNextHint = false;
 
 	export let disabled;
 	export let conflictingNumber;
@@ -34,10 +38,13 @@
 		     class:selected={selected}
 		     class:same-area={sameArea}
 		     class:same-number={sameNumber}
-		     class:conflicting-number={conflictingNumber}>
+		     class:conflicting-number={conflictingNumber}
+		     class:next-hint={isNextHint}>
 
 			<button class="cell-btn" on:click={cursor.set(cellX - 1, cellY - 1)}>
-				{#if candidates}
+				{#if candidateHintsEnabled && candidateHintTarget && candidateHintTarget.row === cellY - 1 && candidateHintTarget.col === cellX - 1 && computedCandidates && computedCandidates.length}
+					<Candidates candidates={computedCandidates} />
+				{:else if candidates}
 					<Candidates {candidates} />
 				{:else}
 					<span class="cell-text">{value || ''}</span>
@@ -106,6 +113,10 @@
 
 	.selected {
 		@apply bg-primary text-white;
+	}
+
+	.next-hint {
+		@apply ring-4 ring-yellow-300;
 	}
 
 	.same-area {

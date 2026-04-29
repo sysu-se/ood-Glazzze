@@ -13,7 +13,7 @@
 
 import { writable, derived, get } from 'svelte/store';//典型Svelte 3 风格
 import { createGame, createSudoku, createGameFromJSON } from '../domain/index.js';
-import { generateSudoku } from '@sudoku/sudoku';
+import { generateSudoku, solveSudoku } from '@sudoku/sudoku';
 import { decodeSencode, validateSencode } from '@sudoku/sencode';
 import { cursor } from '@sudoku/stores/cursor';
 import { candidates } from '@sudoku/stores/candidates';
@@ -37,6 +37,9 @@ export function createGameStore(options = {}) {
   // 内部可写 store：持有当前的 Game 实例（典型Svelte 3 风格）
   const gameInstance = writable(game);
   const paused = writable(true);
+  const candidateHintsEnabled = writable(false);
+  const candidateHintTarget = writable(null);
+  const highlightedNextHint = writable(null);
 
   function setPaused(nextPaused) {
     paused.set(nextPaused);
@@ -52,6 +55,9 @@ export function createGameStore(options = {}) {
     candidates.reset();
     notes.reset();
     hints.reset();
+    candidateHintsEnabled.set(false);
+    candidateHintTarget.set(null);
+    highlightedNextHint.set(null);
     timer.reset();
     setPaused(true);
   }
@@ -92,6 +98,34 @@ export function createGameStore(options = {}) {
   const canRedo = derived(gameInstance, $game => 
     $game.canRedo()
   );
+
+  // 响应式 store：为 UI 提供每个空格的领域候选（key = 'x,y'）
+  // 这里不临时拼 UI 数据，直接把 Sudoku 计算出的候选结果整理成视图层可订阅的 store。
+  const computedCandidates = derived(gameInstance, $game => {
+    const map = {};
+    const grid = $game.getSudoku().getGrid();
+
+    for (let row = 0; row < 9; row++) {
+      for (let col = 0; col < 9; col++) {
+        if (grid[row][col] === 0) {
+          try {
+            const cands = $game.getCandidates(row, col);
+            if (cands && cands.length > 0) {
+              map[col + ',' + row] = cands;
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+      }
+    }
+
+    return map;
+  });
+
+  // 响应式 store：下一步可填的提示（来自领域对象）
+  // UI 只消费这个派生结果，不负责判断“下一步”是否成立。
+  const nextHint = derived(gameInstance, $game => $game.getNextHint());
 
 
   //对外暴露 UI 可调用的方法（命令）
@@ -354,19 +388,39 @@ export function createGameStore(options = {}) {
       }
 
       try {
-        const candidates = $game.getCandidates(row, col);
-        if (candidates.length === 1) {
-          $game.guess({ row, col, value: candidates[0] });
+        const solvedGrid = solveSudoku(current);
+        const solvedValue = solvedGrid?.[row]?.[col];
+
+        if (Number.isInteger(solvedValue) && solvedValue >= 1 && solvedValue <= 9) {
+          $game.guess({ row, col, value: solvedValue });
           applied = true;
         }
       } catch (error) {
-        // 无法求解时忽略提示请求
+        try {
+          const candidates = $game.getCandidates(row, col);
+          if (candidates.length === 1) {
+            $game.guess({ row, col, value: candidates[0] });
+            applied = true;
+          }
+        } catch (fallbackError) {
+          // 无法求解时忽略提示请求
+        }
       }
 
       return $game;
     });
 
     return applied;
+  }
+
+  function enableCandidateHints(row, col) {
+    candidateHintsEnabled.set(true);
+    candidateHintTarget.set(row === null || col === null ? null : { row, col });
+    highlightedNextHint.set(null);
+  }
+
+  function highlightNextHint(row, col) {
+    highlightedNextHint.set(row === null || col === null ? null : { row, col });
   }
 
   /**
@@ -388,6 +442,11 @@ export function createGameStore(options = {}) {
     paused: { subscribe: paused.subscribe },
     canUndo: { subscribe: canUndo.subscribe },
     canRedo: { subscribe: canRedo.subscribe },
+    computedCandidates: { subscribe: computedCandidates.subscribe },
+    nextHint: { subscribe: nextHint.subscribe },
+    candidateHintsEnabled: { subscribe: candidateHintsEnabled.subscribe },
+    candidateHintTarget: { subscribe: candidateHintTarget.subscribe },
+    highlightedNextHint: { subscribe: highlightedNextHint.subscribe },
     
     // === 命令方法 ===
     // UI 调用这些方法来修改游戏状态
@@ -413,6 +472,8 @@ export function createGameStore(options = {}) {
     canImportCode,
     importCode,
     applyHint,
+    enableCandidateHints,
+    highlightNextHint,
     
     // === 内部访问 ===
     // 测试或高级使用场景

@@ -16,6 +16,13 @@
   - `getNextHint()`
 - 在 `gameStore.applyHint` 中，不再依赖预先求解的整盘答案，而是调用领域对象候选逻辑，只在候选唯一时自动填入。
 
+可以直接总结为：
+
+- 提示能力主要属于 `Sudoku`，因为候选数和下一步提示都是基于当前棋盘约束推导出来的，具体实现就在 `src/domain/sudoku.js` 的 `getCandidates()` 和 `getNextHint()`。
+- `Game` 不重复计算提示，而是作为当前局面的协调者，直接把查询转发给当前的 `Sudoku` 实例，见 `src/domain/game.js` 的 `getCandidates()` 和 `getNextHint()`。
+- `gameStore` 只是把领域对象暴露成 UI 可订阅的状态，不在组件里临时拼接提示逻辑，见 `src/stores/gameStore.js` 的 `computedCandidates`、`nextHint`，以及返回给 UI 的 store 导出。
+- UI 层只负责消费这些状态并触发动作，不直接计算候选或下一步，相关入口在 `src/components/Controls/ActionBar/Actions.svelte` 和 `src/components/Board/index.svelte`。
+
 这样做满足了“提示必须通过领域对象接口提供”的要求，并且让提示逻辑在测试中可直接验证。
 
 ### 2. 你认为提示功能更属于 `Sudoku` 还是 `Game`？为什么？
@@ -26,6 +33,8 @@
 - **会话协调属于 `Game`**：`Game` 负责把提示能力暴露给 UI/Store，并与历史、状态管理协作。
 
 因此采用“`Sudoku` 负责计算，`Game` 负责编排与对外接口”的分工。这样可以保证领域规则集中，外层调用简单。
+
+换句话说，这套设计里，提示不是 UI 技巧，也不是 `Game` 自己重新求解整盘，而是 `Sudoku` 先算出结果，`Game` 只负责把当前局面的提示能力统一出口给上层使用。
 
 ### 3. 你如何实现探索模式？
 

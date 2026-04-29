@@ -404,6 +404,7 @@ export class Game {
    * @returns {number[]}
    */
   getCandidates(row, col) {
+    // Game 不自己重复计算候选数，只把当前局面的查询转发给 Sudoku。
     return this.currentSudoku.getCandidates(row, col);
   }
 
@@ -422,6 +423,7 @@ export class Game {
    * @returns {{ row: number, col: number, value: number, candidates: number[] } | null}
    */
   getNextHint() {
+    // 下一步提示属于当前局面的推导结果，Game 只负责代理当前 Sudoku。
     return this.currentSudoku.getNextHint();
   }
 

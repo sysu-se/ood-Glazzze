@@ -13,6 +13,10 @@
 	$: givenGridStore = gameStore.givenGrid;
 	$: invalidCellsStore = gameStore.invalidCells;
 	$: pausedStore = gameStore.paused;
+	$: computedCandidatesStore = gameStore.computedCandidates;
+	$: candidateHintsEnabledStore = gameStore.candidateHintsEnabled;
+	$: candidateHintTargetStore = gameStore.candidateHintTarget;
+	$: highlightedNextHintStore = gameStore.highlightedNextHint;
 
 	function isSelected(cursorStore, x, y) {
 		return cursorStore.x === x && cursorStore.y === y;
@@ -50,10 +54,14 @@
 
 			{#each $gridStore as row, y}
 				{#each row as value, x}
-					<Cell {value}
-					      cellY={y + 1}
-					      cellX={x + 1}
-					      candidates={$candidates[x + ',' + y]}
+							<Cell {value}
+								  cellY={y + 1}
+								  cellX={x + 1}
+								  candidates={$candidates && $candidates[x + ',' + y]}
+								  computedCandidates={$computedCandidatesStore && $computedCandidatesStore[x + ',' + y]}
+								  candidateHintsEnabled={$candidateHintsEnabledStore}
+								  candidateHintTarget={$candidateHintTargetStore}
+								  isNextHint={($highlightedNextHintStore && $highlightedNextHintStore.row === y && $highlightedNextHintStore.col === x)}
 					      disabled={$pausedStore}
 					      selected={isSelected($cursor, x, y)}
 					      userNumber={$givenGridStore[y][x] === 0}

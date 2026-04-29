@@ -13,20 +13,48 @@
 	$: canRedoStore = gameStore.canRedo;
 	$: gridStore = gameStore.grid;
 	$: pausedStore = gameStore.paused;
+	$: nextHintStore = gameStore.nextHint;
+	$: candidateHintsEnabledStore = gameStore.candidateHintsEnabled;
 
 	$: hintsAvailable = $hints > 0;
+	$: selectedIsEmpty = $cursor.x !== null && $cursor.y !== null && $gridStore[$cursor.y]?.[$cursor.x] === 0;
 
-	function handleHint() {
-		if (hintsAvailable) {
-			if ($candidates.hasOwnProperty($cursor.x + ',' + $cursor.y)) {
-				candidates.clear($cursor);
-			}
-
-			const applied = gameStore.applyHint($cursor.y, $cursor.x);
-			if (applied) {
-				hints.useHint();
-			}
+	function consumeHintIfPossible(applied) {
+		if (applied && hintsAvailable) {
+			hints.useHint();
 		}
+	}
+
+	function handleCandidateHint() {
+		if (!hintsAvailable || !selectedIsEmpty) {
+			return;
+		}
+
+		if ($candidates && $candidates.hasOwnProperty($cursor.x + ',' + $cursor.y)) {
+			candidates.clear($cursor);
+		}
+
+		gameStore.enableCandidateHints($cursor.y, $cursor.x);
+		hints.useHint();
+	}
+
+	function handleNextHintPosition() {
+		if (!hintsAvailable || !$nextHintStore) {
+			return;
+		}
+
+		gameStore.highlightNextHint($nextHintStore.row, $nextHintStore.col);
+		hints.useHint();
+	}
+
+	function handleNextHintAnswer() {
+		if (!hintsAvailable || !$nextHintStore) {
+			return;
+		}
+
+		gameStore.highlightNextHint($nextHintStore.row, $nextHintStore.col);
+		const applied = gameStore.applyHint($nextHintStore.row, $nextHintStore.col);
+		consumeHintIfPossible(applied);
 	}
 </script>
 
@@ -44,7 +72,7 @@
 		</svg>
 	</button>
 
-	<button class="btn btn-round btn-badge" disabled={$pausedStore || !hintsAvailable || $cursor.x === null || $cursor.y === null || $gridStore[$cursor.y]?.[$cursor.x] !== 0} on:click={handleHint} title="Hints ({$hints})">
+	<button class="btn btn-round btn-badge" disabled={$pausedStore || !hintsAvailable || !selectedIsEmpty} on:click={handleCandidateHint} title="Candidates ({$hints})">
 		<svg class="icon-outline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
 		</svg>
@@ -52,6 +80,29 @@
 		{#if $settings.hintsLimited}
 			<span class="badge" class:badge-primary={hintsAvailable}>{$hints}</span>
 		{/if}
+		<span class="btn-label">Candidates</span>
+	</button>
+
+	<button class="btn btn-round btn-badge" disabled={$pausedStore || !hintsAvailable || !$nextHintStore} on:click={handleNextHintPosition} title="Only Show Next Position ({$hints})">
+		<svg class="icon-outline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v8m4-4H8m8.485-4.485A9 9 0 103.515 12a9 9 0 0016.97 0z" />
+		</svg>
+
+		{#if $settings.hintsLimited}
+			<span class="badge" class:badge-primary={hintsAvailable}>{$hints}</span>
+		{/if}
+		<span class="btn-label">仅提示位置</span>
+	</button>
+
+	<button class="btn btn-round btn-badge" disabled={$pausedStore || !hintsAvailable || !$nextHintStore} on:click={handleNextHintAnswer} title="Fill Next Answer ({$hints})">
+		<svg class="icon-outline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+		</svg>
+
+		{#if $settings.hintsLimited}
+			<span class="badge" class:badge-primary={hintsAvailable}>{$hints}</span>
+		{/if}
+		<span class="btn-label">直接填写答案</span>
 	</button>
 
 	<button class="btn btn-round btn-badge" on:click={notes.toggle} title="Notes ({$notes ? 'ON' : 'OFF'})">
@@ -67,7 +118,7 @@
 
 <style>
 	.action-buttons {
-		@apply flex flex-wrap justify-evenly self-end;
+		@apply flex flex-wrap items-center justify-evenly self-end gap-3;
 	}
 
 	.btn-badge {
@@ -82,5 +133,9 @@
 
 	.badge-primary {
 		@apply bg-primary;
+	}
+
+	.btn-label {
+		@apply text-xs font-semibold tracking-wide uppercase mt-1;
 	}
 </style>
