@@ -1,15 +1,23 @@
 <script>
+	import { createEventDispatcher } from 'svelte';
+
 	export let id = '';
 	export let text = '';
 	export let checked = false;
 	export let disabled = false;
+
+	const dispatch = createEventDispatcher();
+
+	function handleChange() {
+		dispatch('change', checked);
+	}
 </script>
 
 <label for="{id}" class="inline-flex items-center">
 	<span class="flex-grow cursor-pointer text-lg">{text}</span>
 
 	<span class="switch">
-		<input {id} name="{id}" type="checkbox" class="sr-only" {disabled} bind:checked />
+		<input {id} name="{id}" type="checkbox" class="sr-only" {disabled} bind:checked on:change={handleChange} />
 		<span class="track"></span>
 		<span class="thumb"></span>
 	</span>

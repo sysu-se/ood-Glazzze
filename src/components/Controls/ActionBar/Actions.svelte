@@ -4,6 +4,7 @@
 	import { hints } from '@sudoku/stores/hints';
 	import { notes } from '@sudoku/stores/notes';
 	import { settings } from '@sudoku/stores/settings';
+	import Switch from '../../Utils/Switch.svelte';
 
 	// 接收 gameStore 作为 prop
 	export let gameStore;
@@ -15,9 +16,12 @@
 	$: pausedStore = gameStore.paused;
 	$: nextHintStore = gameStore.nextHint;
 	$: candidateHintsEnabledStore = gameStore.candidateHintsEnabled;
+	$: exploreStatusStore = gameStore.exploreStatus;
 
 	$: hintsAvailable = $hints > 0;
 	$: selectedIsEmpty = $cursor.x !== null && $cursor.y !== null && $gridStore[$cursor.y]?.[$cursor.x] === 0;
+	$: exploreActive = $exploreStatusStore?.active;
+	$: exploreConflict = $exploreStatusStore?.hasConflict;
 
 	function consumeHintIfPossible(applied) {
 		if (applied && hintsAvailable) {
@@ -55,6 +59,27 @@
 		gameStore.highlightNextHint($nextHintStore.row, $nextHintStore.col);
 		const applied = gameStore.applyHint($nextHintStore.row, $nextHintStore.col);
 		consumeHintIfPossible(applied);
+	}
+
+	function handleExploreToggle(event) {
+		if (event.detail) {
+			gameStore.startExplore();
+			return;
+		}
+
+		gameStore.cancelExplore();
+	}
+
+	function handleBacktrackExplore() {
+		gameStore.backtrackExplore();
+	}
+
+	function handleCommitExplore() {
+		gameStore.commitExplore();
+	}
+
+	function handleCancelExplore() {
+		gameStore.cancelExplore();
 	}
 </script>
 
@@ -113,6 +138,34 @@
 		<span class="badge tracking-tighter" class:badge-primary={$notes}>{$notes ? 'ON' : 'OFF'}</span>
 	</button>
 
+	<div class="explore-panel">
+		<Switch
+			id="explore-mode"
+			text="探索模式"
+			checked={!!exploreActive}
+			disabled={$pausedStore}
+			on:change={handleExploreToggle}
+		/>
+
+		{#if exploreActive}
+			<div class="explore-actions">
+				<button class="btn btn-small btn-primary" disabled={$pausedStore || !exploreActive} on:click={handleBacktrackExplore}>回到起点</button>
+				<button class="btn btn-small" disabled={$pausedStore || !exploreActive || exploreConflict} on:click={handleCommitExplore}>提交</button>
+				<button class="btn btn-small" disabled={$pausedStore || !exploreActive} on:click={handleCancelExplore}>放弃</button>
+			</div>
+
+			<div class="explore-status" class:explore-status-conflict={exploreConflict}>
+				{#if $exploreStatusStore.status === 'revisited-failed'}
+					这个棋盘路径之前已经失败过。
+				{:else if exploreConflict}
+					检测到冲突，当前探索分支无效。
+				{:else}
+					正在基于保存的起点进行探索。
+				{/if}
+			</div>
+		{/if}
+	</div>
+
 </div>
 
 
@@ -137,5 +190,21 @@
 
 	.btn-label {
 		@apply text-xs font-semibold tracking-wide uppercase mt-1;
+	}
+
+	.explore-panel {
+		@apply flex flex-col items-center gap-2 pt-1;
+	}
+
+	.explore-actions {
+		@apply flex flex-wrap items-center justify-center gap-2;
+	}
+
+	.explore-status {
+		@apply max-w-md text-center text-xs font-semibold tracking-wide text-gray-600;
+	}
+
+	.explore-status-conflict {
+		@apply text-red-600;
 	}
 </style>

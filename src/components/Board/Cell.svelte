@@ -27,10 +27,10 @@ export let isNextHint = false;
 </script>
 
 <div class="cell row-start-{cellY} col-start-{cellX}"
-     class:border-r={borderRight}
-     class:border-r-4={borderRightBold}
-     class:border-b={borderBottom}
-     class:border-b-4={borderBottomBold}>
+	style:border-style="solid"
+	style:border-color="rgb(209 213 219)"
+	style:border-right-width={borderRightBold ? '4px' : (borderRight ? '1px' : '0')}
+	style:border-bottom-width={borderBottomBold ? '4px' : (borderBottom ? '1px' : '0')}>
 
 	{#if !disabled}
 		<div class="cell-inner"

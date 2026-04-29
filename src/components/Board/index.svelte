@@ -50,7 +50,7 @@
 	</div>
 	<div class="board-padding absolute inset-0 flex justify-center">
 
-		<div class="bg-white shadow-2xl rounded-xl overflow-hidden w-full h-full max-w-xl grid" class:bg-gray-200={$pausedStore}>
+		<div class="bg-white shadow-2xl rounded-xl overflow-hidden w-full h-full max-w-xl grid grid-cols-9 grid-rows-9" class:bg-gray-200={$pausedStore}>
 
 			{#each $gridStore as row, y}
 				{#each row as value, x}
