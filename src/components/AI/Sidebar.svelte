@@ -20,15 +20,17 @@
   }
 </script>
 
-{#if explanation}
-  <div class="ai-sidebar" style="position:fixed;right:12px;top:80px;width:320px;max-height:60vh;overflow:auto;background:rgba(255,255,255,0.98);border:1px solid #ddd;padding:12px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.12);z-index:60">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <strong>提示解释</strong>
-      <button aria-label="关闭解释" on:click={close} style="background:none;border:none;cursor:pointer;font-size:16px">✕</button>
-    </div>
-    <div style="font-size:14px;line-height:1.5;color:#222">
+<aside class="ai-sidebar" style="position:fixed;right:12px;top:80px;width:320px;max-height:60vh;overflow:auto;background:rgba(255,255,255,0.98);border:1px solid #ddd;padding:12px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.12);z-index:60">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <strong>提示解释</strong>
+    <button aria-label="清空解释" on:click={close} style="background:none;border:none;cursor:pointer;font-size:16px">✕</button>
+  </div>
+  <div style="font-size:14px;line-height:1.5;color:#222">
+    {#if explanation}
       <div style="margin-bottom:8px;color:#666">位置：{explanation.row},{explanation.col}</div>
       <div>{explanation.text}</div>
-    </div>
+    {:else}
+      <div style="color:#666">等待提示。点击任意 Hint 按钮后，这里会显示 AI 的解释。</div>
+    {/if}
   </div>
-{/if}
+</aside>
