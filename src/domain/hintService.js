@@ -3,7 +3,7 @@ import { generateHintExplanation } from './agent.js';
 
 export const HINT_LEVEL_DEFS = Object.freeze({
   1: { level: 1, name: 'L1 观察级', desc: '只指出值得关注的位置，并说明原因。' },
-  2: { level: 2, name: 'L2 候选+推理级', desc: '显示候选集合，并解释排除依据（行/列/宫）。' },
+  2: { level: 2, name: 'L2 候选级', desc: '显示候选集合，并解释排除依据（行/列/宫）。' },
   3: { level: 3, name: 'L3 决策级', desc: '可确定时直接给出可填数字。' },
 });
 
@@ -184,7 +184,7 @@ function buildCandidateAction(game, row, col) {
     explanation: {
       row: target.row,
       col: target.col,
-      text: `L2 候选+推理级：${generateHintExplanation(game, target.row, target.col)}`,
+      text: `L2 候选级：${generateHintExplanation(game, target.row, target.col)}`,
     },
   };
 }
