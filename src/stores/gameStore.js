@@ -22,6 +22,17 @@ import { hints } from '@sudoku/stores/hints';
 import { notes } from '@sudoku/stores/notes';
 import { timer } from '@sudoku/stores/timer';
 
+const HINT_LEVEL_DEFS = {
+  1: { level: 1, name: 'L1 观察级', desc: '只指出值得关注的位置，并说明原因。' },
+  2: { level: 2, name: 'L2 候选+推理级', desc: '显示候选集合，并解释排除依据（行/列/宫）。' },
+  3: { level: 3, name: 'L3 决策级', desc: '可确定时直接给出可填数字。' },
+};
+
+function normalizeHintLevel(level) {
+  const num = Number(level);
+  return HINT_LEVEL_DEFS[num] ? num : 1;
+}
+
 /**
  * 创建游戏 Store Adapter（⾯向 Svelte 的适配层）
  * @param {Object} options
@@ -41,6 +52,8 @@ export function createGameStore(options = {}) {
   const candidateHintsEnabled = writable(false);
   const candidateHintTarget = writable(null);
   const highlightedNextHint = writable(null);
+  const hintLevel = writable(1);
+  const hintLevelInfo = derived(hintLevel, $level => HINT_LEVEL_DEFS[$level] || HINT_LEVEL_DEFS[1]);
   // explanation state for hint explanations (由本地 Agent 生成)
   const explanation = writable(null);
 
@@ -385,30 +398,7 @@ export function createGameStore(options = {}) {
 
     let applied = false;
     gameInstance.update($game => {
-      const current = $game.getSudoku().getGrid();
-      if (current[row][col] !== 0) {
-        return $game;
-      }
-
-      try {
-        const solvedGrid = solveSudoku(current);
-        const solvedValue = solvedGrid?.[row]?.[col];
-
-        if (Number.isInteger(solvedValue) && solvedValue >= 1 && solvedValue <= 9) {
-          $game.guess({ row, col, value: solvedValue });
-          applied = true;
-        }
-      } catch (error) {
-        try {
-          const candidates = $game.getCandidates(row, col);
-          if (candidates.length === 1) {
-            $game.guess({ row, col, value: candidates[0] });
-            applied = true;
-          }
-        } catch (fallbackError) {
-          // 无法求解时忽略提示请求
-        }
-      }
+      applied = tryFillByHint($game, row, col);
 
       return $game;
     });
@@ -445,6 +435,129 @@ export function createGameStore(options = {}) {
     highlightedNextHint.set(row === null || col === null ? null : { row, col });
   }
 
+  function setHintLevel(level) {
+    hintLevel.set(normalizeHintLevel(level));
+  }
+
+  function findHintTarget($game, row, col) {
+    const grid = $game.getSudoku().getGrid();
+    if (row !== null && row !== undefined && col !== null && col !== undefined && grid[row]?.[col] === 0) {
+      return { row, col };
+    }
+
+    const next = $game.getNextHint();
+    if (next && next.row !== undefined && next.col !== undefined) {
+      return { row: next.row, col: next.col };
+    }
+
+    return null;
+  }
+
+  function tryFillByHint($game, row, col) {
+    const current = $game.getSudoku().getGrid();
+    if (current[row]?.[col] !== 0) {
+      return false;
+    }
+
+    try {
+      const solvedGrid = solveSudoku(current);
+      const solvedValue = solvedGrid?.[row]?.[col];
+      if (Number.isInteger(solvedValue) && solvedValue >= 1 && solvedValue <= 9) {
+        $game.guess({ row, col, value: solvedValue });
+        return true;
+      }
+    } catch (error) {
+      // fallback to candidate-based fill below
+    }
+
+    try {
+      const cands = $game.getCandidates(row, col) || [];
+      if (cands.length === 1) {
+        $game.guess({ row, col, value: cands[0] });
+        return true;
+      }
+    } catch (fallbackError) {
+      // ignore
+    }
+
+    return false;
+  }
+
+  // 统一 Hint 入口：根据当前提示等级执行不同策略
+  function requestHint(row, col) {
+    let acted = false;
+    const level = get(hintLevel);
+
+    gameInstance.update($game => {
+      const target = findHintTarget($game, row, col);
+
+      if (level === 1) {
+        const next = $game.getNextHint();
+        if (next) {
+          const cands = $game.getCandidates(next.row, next.col) || [];
+          const reason = cands.length === 1
+            ? `该格当前唯一候选是 ${cands[0]}，所以值得优先观察。`
+            : '该格是系统推断出的优先观察位置。';
+          highlightedNextHint.set({ row: next.row, col: next.col });
+          explanation.set({
+            row: next.row,
+            col: next.col,
+            text: `L1 观察级：建议先关注该位置。原因：${reason}`,
+          });
+          acted = true;
+        }
+        return $game;
+      }
+
+      if (level === 2) {
+        if (target) {
+          enableCandidateHints(target.row, target.col);
+          explanation.set({
+            row: target.row,
+            col: target.col,
+            text: `L2 候选+推理级：${generateHintExplanation($game, target.row, target.col)}`,
+          });
+          acted = true;
+        }
+        return $game;
+      }
+
+      if (level === 3) {
+        const selectedTarget = (
+          row !== null && row !== undefined && col !== null && col !== undefined
+        ) ? { row, col } : null;
+
+        // L3 规则：若用户已选中格子，则仅对该格尝试决策，不回退到系统建议格。
+        const decisionTarget = selectedTarget || target;
+        if (decisionTarget) {
+          // 先在填写前生成原因解释，避免填写后只能看到“该格已有数字”。
+          const preReason = generateHintExplanation($game, decisionTarget.row, decisionTarget.col);
+
+          highlightedNextHint.set({ row: decisionTarget.row, col: decisionTarget.col });
+          const applied = tryFillByHint($game, decisionTarget.row, decisionTarget.col);
+
+          const usesSelectedCell = selectedTarget
+            && selectedTarget.row === decisionTarget.row
+            && selectedTarget.col === decisionTarget.col;
+
+          explanation.set({
+            row: decisionTarget.row,
+            col: decisionTarget.col,
+            text: applied
+              ? `L3 决策级：已填写${usesSelectedCell ? '当前选中格' : '目标格'}。原因：${preReason}`
+              : `L3 决策级：${usesSelectedCell ? '当前选中格' : '目标格'}当前无法直接填写。原因：${preReason} 建议切换到 L2 查看候选与推理。`,
+          });
+          acted = true;
+        }
+        return $game;
+      }
+
+      return $game;
+    });
+
+    return acted;
+  }
+
   /**
    * 获取当前 Game 实例（内部使用）
    */
@@ -469,6 +582,8 @@ export function createGameStore(options = {}) {
     candidateHintsEnabled: { subscribe: candidateHintsEnabled.subscribe },
     candidateHintTarget: { subscribe: candidateHintTarget.subscribe },
     highlightedNextHint: { subscribe: highlightedNextHint.subscribe },
+    hintLevel: { subscribe: hintLevel.subscribe },
+    hintLevelInfo: { subscribe: hintLevelInfo.subscribe },
     explanation: { subscribe: explanation.subscribe },
     
     // === 命令方法 ===
@@ -495,6 +610,8 @@ export function createGameStore(options = {}) {
     canImportCode,
     importCode,
     applyHint,
+    requestHint,
+    setHintLevel,
     enableCandidateHints,
     highlightNextHint,
     explainHint,

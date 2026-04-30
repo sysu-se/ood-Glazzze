@@ -3,14 +3,23 @@
   export let gameStore;
 
   let unsub;
+  let unsubHint;
   let explanation = null;
+  let hintLevelInfo = { name: 'L1 观察级', desc: '只指出值得关注的位置，不给数字。' };
 
   if (gameStore && gameStore.explanation) {
     unsub = gameStore.explanation.subscribe(v => explanation = v);
   }
 
+  if (gameStore && gameStore.hintLevelInfo) {
+    unsubHint = gameStore.hintLevelInfo.subscribe(v => {
+      hintLevelInfo = v || hintLevelInfo;
+    });
+  }
+
   onDestroy(() => {
     if (unsub) unsub();
+    if (unsubHint) unsubHint();
   });
 
   function close() {
@@ -24,6 +33,11 @@
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
     <strong>提示解释</strong>
     <button aria-label="清空解释" on:click={close} style="background:none;border:none;cursor:pointer;font-size:16px">✕</button>
+  </div>
+  <div style="margin-bottom:8px;padding:8px;border-radius:6px;background:#f7fafc;border:1px solid #e5e7eb">
+    <div style="font-size:12px;color:#4b5563">当前提示等级</div>
+    <div style="font-size:13px;font-weight:600;color:#111">{hintLevelInfo.name}</div>
+    <div style="font-size:12px;color:#4b5563">{hintLevelInfo.desc}</div>
   </div>
   <div style="font-size:14px;line-height:1.5;color:#222">
     {#if explanation}
