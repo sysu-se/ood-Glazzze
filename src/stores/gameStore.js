@@ -13,25 +13,20 @@
 
 import { writable, derived, get } from 'svelte/store';//典型Svelte 3 风格
 import { createGame, createSudoku, createGameFromJSON } from '../domain/index.js';
+import {
+  HINT_LEVEL_DEFS,
+  buildHintAction,
+  fillCellByHint,
+  normalizeHintLevel,
+} from '../domain/hintService.js';
 import { generateHintExplanation } from '../domain/agent.js';
-import { generateSudoku, solveSudoku } from '@sudoku/sudoku';
+import { generateSudoku } from '@sudoku/sudoku';
 import { decodeSencode, validateSencode } from '@sudoku/sencode';
 import { cursor } from '@sudoku/stores/cursor';
 import { candidates } from '@sudoku/stores/candidates';
 import { hints } from '@sudoku/stores/hints';
 import { notes } from '@sudoku/stores/notes';
 import { timer } from '@sudoku/stores/timer';
-
-const HINT_LEVEL_DEFS = {
-  1: { level: 1, name: 'L1 观察级', desc: '只指出值得关注的位置，并说明原因。' },
-  2: { level: 2, name: 'L2 候选+推理级', desc: '显示候选集合，并解释排除依据（行/列/宫）。' },
-  3: { level: 3, name: 'L3 决策级', desc: '可确定时直接给出可填数字。' },
-};
-
-function normalizeHintLevel(level) {
-  const num = Number(level);
-  return HINT_LEVEL_DEFS[num] ? num : 1;
-}
 
 /**
  * 创建游戏 Store Adapter（⾯向 Svelte 的适配层）
@@ -103,6 +98,7 @@ export function createGameStore(options = {}) {
 
   // 响应式 store：探索模式状态
   const exploreStatus = derived(gameInstance, $game => $game.getExploreStatus());
+  const exploreBranches = derived(gameInstance, $game => $game.listExploreBranches());
   
   //canUndo/canRedo 也是由领域对象派生，按钮状态会联动刷新
   // 响应式 store：是否可以撤销
@@ -439,48 +435,8 @@ export function createGameStore(options = {}) {
     hintLevel.set(normalizeHintLevel(level));
   }
 
-  function findHintTarget($game, row, col) {
-    const grid = $game.getSudoku().getGrid();
-    if (row !== null && row !== undefined && col !== null && col !== undefined && grid[row]?.[col] === 0) {
-      return { row, col };
-    }
-
-    const next = $game.getNextHint();
-    if (next && next.row !== undefined && next.col !== undefined) {
-      return { row: next.row, col: next.col };
-    }
-
-    return null;
-  }
-
   function tryFillByHint($game, row, col) {
-    const current = $game.getSudoku().getGrid();
-    if (current[row]?.[col] !== 0) {
-      return false;
-    }
-
-    try {
-      const solvedGrid = solveSudoku(current);
-      const solvedValue = solvedGrid?.[row]?.[col];
-      if (Number.isInteger(solvedValue) && solvedValue >= 1 && solvedValue <= 9) {
-        $game.guess({ row, col, value: solvedValue });
-        return true;
-      }
-    } catch (error) {
-      // fallback to candidate-based fill below
-    }
-
-    try {
-      const cands = $game.getCandidates(row, col) || [];
-      if (cands.length === 1) {
-        $game.guess({ row, col, value: cands[0] });
-        return true;
-      }
-    } catch (fallbackError) {
-      // ignore
-    }
-
-    return false;
+    return fillCellByHint($game, row, col);
   }
 
   // 统一 Hint 入口：根据当前提示等级执行不同策略
@@ -489,67 +445,23 @@ export function createGameStore(options = {}) {
     const level = get(hintLevel);
 
     gameInstance.update($game => {
-      const target = findHintTarget($game, row, col);
+      const action = buildHintAction($game, level, row, col);
+      acted = action.acted;
 
-      if (level === 1) {
-        const next = $game.getNextHint();
-        if (next) {
-          const cands = $game.getCandidates(next.row, next.col) || [];
-          const reason = cands.length === 1
-            ? `该格当前唯一候选是 ${cands[0]}，所以值得优先观察。`
-            : '该格是系统推断出的优先观察位置。';
-          highlightedNextHint.set({ row: next.row, col: next.col });
-          explanation.set({
-            row: next.row,
-            col: next.col,
-            text: `L1 观察级：建议先关注该位置。原因：${reason}`,
-          });
-          acted = true;
-        }
-        return $game;
+      if (action.highlight) {
+        highlightedNextHint.set(action.highlight);
       }
 
-      if (level === 2) {
-        if (target) {
-          enableCandidateHints(target.row, target.col);
-          explanation.set({
-            row: target.row,
-            col: target.col,
-            text: `L2 候选+推理级：${generateHintExplanation($game, target.row, target.col)}`,
-          });
-          acted = true;
-        }
-        return $game;
+      if (action.candidateTarget) {
+        enableCandidateHints(action.candidateTarget.row, action.candidateTarget.col);
       }
 
-      if (level === 3) {
-        const selectedTarget = (
-          row !== null && row !== undefined && col !== null && col !== undefined
-        ) ? { row, col } : null;
+      if (action.fillMove) {
+        $game.guess(action.fillMove);
+      }
 
-        // L3 规则：若用户已选中格子，则仅对该格尝试决策，不回退到系统建议格。
-        const decisionTarget = selectedTarget || target;
-        if (decisionTarget) {
-          // 先在填写前生成原因解释，避免填写后只能看到“该格已有数字”。
-          const preReason = generateHintExplanation($game, decisionTarget.row, decisionTarget.col);
-
-          highlightedNextHint.set({ row: decisionTarget.row, col: decisionTarget.col });
-          const applied = tryFillByHint($game, decisionTarget.row, decisionTarget.col);
-
-          const usesSelectedCell = selectedTarget
-            && selectedTarget.row === decisionTarget.row
-            && selectedTarget.col === decisionTarget.col;
-
-          explanation.set({
-            row: decisionTarget.row,
-            col: decisionTarget.col,
-            text: applied
-              ? `L3 决策级：已填写${usesSelectedCell ? '当前选中格' : '目标格'}。原因：${preReason}`
-              : `L3 决策级：${usesSelectedCell ? '当前选中格' : '目标格'}当前无法直接填写。原因：${preReason} 建议切换到 L2 查看候选与推理。`,
-          });
-          acted = true;
-        }
-        return $game;
+      if (action.explanation) {
+        explanation.set(action.explanation);
       }
 
       return $game;
@@ -574,6 +486,7 @@ export function createGameStore(options = {}) {
     invalidCells: { subscribe: invalidCells.subscribe },
     won: { subscribe: won.subscribe },
     exploreStatus: { subscribe: exploreStatus.subscribe },
+    exploreBranches: { subscribe: exploreBranches.subscribe },
     paused: { subscribe: paused.subscribe },
     canUndo: { subscribe: canUndo.subscribe },
     canRedo: { subscribe: canRedo.subscribe },

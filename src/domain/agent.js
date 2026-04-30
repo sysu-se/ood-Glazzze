@@ -64,7 +64,6 @@ export function generateHintExplanation(game, row, col) {
       reason += '目前无法用行/列/宫的显式已填数字解释候选排除，可能需要更高阶的推理。';
     }
 
-    reason += ' 你可以尝试在该格逐一尝试候选值进入探索模式。';
     return reason;
   } catch (err) {
     return '生成解释时发生错误。';

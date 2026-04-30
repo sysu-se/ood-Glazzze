@@ -7,7 +7,8 @@
 	import Controls from './components/Controls/index.svelte';
 	import Header from './components/Header/index.svelte';
 	import Modal from './components/Modal/index.svelte';
-	import Sidebar from './components/AI/Sidebar.svelte';
+	import AiSidebar from './components/AI/Sidebar.svelte';
+	import ExploreSidebar from './components/Explore/Sidebar.svelte';
 
 	// 初始化新的游戏 Store Adapter
 	export let gameStore = createGameStore();//典型Svelte 3 风格
@@ -53,7 +54,8 @@
 
 <Modal {gameStore} />
 
-<Sidebar {gameStore} />
+<ExploreSidebar {gameStore} />
+<AiSidebar {gameStore} />
 
 <style global>
 	@import "./styles/global.css";

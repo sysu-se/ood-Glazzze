@@ -7,6 +7,8 @@
 	export let data = {};
 	export let hideModal;
 
+	$: data;
+
 	let settings = { ...$settingsStore };
 
 	let hintsLimited = settings.hintsLimited;

@@ -7,6 +7,7 @@
  * - 追踪游戏状态
  */
 
+import { ExploreSession, cloneHistory } from './exploreSession.js';
 import { Sudoku, createSudokuFromJSON } from './sudoku.js';
 
 export class Game {
@@ -92,25 +93,7 @@ export class Game {
       return false;
     }
 
-    const rootBranch = {
-      id: 0,
-      parentId: null,
-      label: 'root',
-      sudoku: this.currentSudoku.clone(),
-      history: this._cloneHistory(this.history),
-      index: this.currentIndex,
-    };
-
-    this.exploreSession = {
-      startSudoku: this.currentSudoku.clone(),
-      startHistory: this._cloneHistory(this.history),
-      startIndex: this.currentIndex,
-      failedFingerprints: new Set(),
-      status: 'active',
-      branches: new Map([[rootBranch.id, rootBranch]]),
-      currentBranchId: rootBranch.id,
-      nextBranchId: 1,
-    };
+    this.exploreSession = ExploreSession.start(this.currentSudoku, this.history, this.currentIndex);
 
     return true;
   }
@@ -132,11 +115,7 @@ export class Game {
       return false;
     }
 
-    this.currentSudoku = this.exploreSession.startSudoku.clone();
-    this.history = this._cloneHistory(this.exploreSession.startHistory);
-    this.currentIndex = this.exploreSession.startIndex;
-    this.exploreSession.status = 'active';
-    this.exploreSession.currentBranchId = 0;
+    this._restoreSnapshot(this.exploreSession.backtrackToStart());
     this._syncCurrentExploreBranchSnapshot();
 
     return true;
@@ -147,7 +126,7 @@ export class Game {
    * @returns {boolean}
    */
   canExploreUndo() {
-    return !!this.exploreSession && this.currentIndex > this.exploreSession.startIndex;
+    return !!this.exploreSession && this.exploreSession.canUndo(this.currentIndex);
   }
 
   /**
@@ -155,7 +134,7 @@ export class Game {
    * @returns {boolean}
    */
   canExploreRedo() {
-    return !!this.exploreSession && this.currentIndex < this.history.length;
+    return !!this.exploreSession && this.exploreSession.canRedo(this.currentIndex, this.history);
   }
 
   /**
@@ -212,17 +191,7 @@ export class Game {
       return null;
     }
 
-    const branchId = this.exploreSession.nextBranchId++;
-    this.exploreSession.branches.set(branchId, {
-      id: branchId,
-      parentId: this.exploreSession.currentBranchId,
-      label: typeof label === 'string' && label.trim() ? label.trim() : `branch-${branchId}`,
-      sudoku: this.currentSudoku.clone(),
-      history: this._cloneHistory(this.history),
-      index: this.currentIndex,
-    });
-
-    return branchId;
+    return this.exploreSession.createBranch(label, this.currentSudoku, this.history, this.currentIndex);
   }
 
   /**
@@ -231,19 +200,16 @@ export class Game {
    * @returns {boolean}
    */
   switchExploreBranch(branchId) {
-    if (!this.exploreSession || !Number.isInteger(branchId)) {
+    if (!this.exploreSession) {
       return false;
     }
 
-    const branch = this.exploreSession.branches.get(branchId);
-    if (!branch) {
+    const snapshot = this.exploreSession.switchToBranch(branchId);
+    if (!snapshot) {
       return false;
     }
 
-    this.currentSudoku = branch.sudoku.clone();
-    this.history = this._cloneHistory(branch.history);
-    this.currentIndex = branch.index;
-    this.exploreSession.currentBranchId = branchId;
+    this._restoreSnapshot(snapshot);
     this._refreshExploreStatusAfterTimelineMove();
 
     return true;
@@ -258,14 +224,7 @@ export class Game {
       return [];
     }
 
-    return Array.from(this.exploreSession.branches.values())
-      .sort((a, b) => a.id - b.id)
-      .map(branch => ({
-        id: branch.id,
-        parentId: branch.parentId,
-        label: branch.label,
-        current: branch.id === this.exploreSession.currentBranchId,
-      }));
+    return this.exploreSession.listBranches();
   }
 
   /**
@@ -323,24 +282,18 @@ export class Game {
       };
     }
 
-    const status = this.exploreSession.status;
-    return {
-      active: true,
-      status,
-      hasConflict: status === 'conflict' || status === 'revisited-failed',
-      revisitedFailedPath: status === 'revisited-failed',
-      startIndex: this.exploreSession.startIndex,
-      currentBranchId: this.exploreSession.currentBranchId,
-      branchCount: this.exploreSession.branches.size,
-      canExploreUndo: this.canExploreUndo(),
-      canExploreRedo: this.canExploreRedo(),
-    };
+    return this.exploreSession.getStatus(this.canExploreUndo(), this.canExploreRedo());
   }
 
   /**
    * undo：撤销上一步操作
    */
   undo() {
+    if (this.exploreSession) {
+      this.exploreUndo();
+      return;
+    }
+
     if (this.canUndo()) {
       const operation = this.history[this.currentIndex - 1];
       this.currentSudoku.guess({
@@ -359,6 +312,11 @@ export class Game {
    * redo：重做下一步操作
    */
   redo() {
+    if (this.exploreSession) {
+      this.exploreRedo();
+      return;
+    }
+
     if (this.canRedo()) {
       const operation = this.history[this.currentIndex];
       this.currentSudoku.guess({
@@ -378,6 +336,10 @@ export class Game {
    * @returns {boolean}
    */
   canUndo() {
+    if (this.exploreSession) {
+      return this.canExploreUndo();
+    }
+
     return this.currentIndex > 0;
   }
 
@@ -386,6 +348,10 @@ export class Game {
    * @returns {boolean}
    */
   canRedo() {
+    if (this.exploreSession) {
+      return this.canExploreRedo();
+    }
+
     return this.currentIndex < this.history.length;
   }
 
@@ -496,21 +462,10 @@ export class Game {
    * @private
    */
   _updateExploreStatusAfterMove() {
-    const fingerprint = this._gridFingerprint(this.currentSudoku.getGrid());
-    const isConflict = !this.currentSudoku.validate().valid;
-
-    if (!isConflict) {
-      this.exploreSession.status = 'active';
-      return;
-    }
-
-    if (this.exploreSession.failedFingerprints.has(fingerprint)) {
-      this.exploreSession.status = 'revisited-failed';
-      return;
-    }
-
-    this.exploreSession.failedFingerprints.add(fingerprint);
-    this.exploreSession.status = 'conflict';
+    this.exploreSession.updateAfterMove(
+      this.currentSudoku.getGrid(),
+      !this.currentSudoku.validate().valid,
+    );
   }
 
   /**
@@ -522,17 +477,10 @@ export class Game {
       return;
     }
 
-    const fingerprint = this._gridFingerprint(this.currentSudoku.getGrid());
-    const isConflict = !this.currentSudoku.validate().valid;
-
-    if (!isConflict) {
-      this.exploreSession.status = 'active';
-      return;
-    }
-
-    this.exploreSession.status = this.exploreSession.failedFingerprints.has(fingerprint)
-      ? 'revisited-failed'
-      : 'conflict';
+    this.exploreSession.refreshAfterTimelineMove(
+      this.currentSudoku.getGrid(),
+      !this.currentSudoku.validate().valid,
+    );
   }
 
   /**
@@ -547,24 +495,7 @@ export class Game {
       };
     }
 
-    return {
-      active: true,
-      status: this.exploreSession.status,
-      startSudoku: this.exploreSession.startSudoku.toJSON(),
-      startHistory: this._cloneHistory(this.exploreSession.startHistory),
-      startIndex: this.exploreSession.startIndex,
-      failedFingerprints: Array.from(this.exploreSession.failedFingerprints),
-      currentBranchId: this.exploreSession.currentBranchId,
-      nextBranchId: this.exploreSession.nextBranchId,
-      branches: Array.from(this.exploreSession.branches.values()).map(branch => ({
-        id: branch.id,
-        parentId: branch.parentId,
-        label: branch.label,
-        sudoku: branch.sudoku.toJSON(),
-        history: this._cloneHistory(branch.history),
-        index: branch.index,
-      })),
-    };
+    return this.exploreSession.toJSON();
   }
 
   /**
@@ -576,14 +507,17 @@ export class Game {
       return;
     }
 
-    const currentBranch = this.exploreSession.branches.get(this.exploreSession.currentBranchId);
-    if (!currentBranch) {
-      return;
-    }
+    this.exploreSession.captureCurrentBranch(this.currentSudoku, this.history, this.currentIndex);
+  }
 
-    currentBranch.sudoku = this.currentSudoku.clone();
-    currentBranch.history = this._cloneHistory(this.history);
-    currentBranch.index = this.currentIndex;
+  /**
+   * 从快照恢复当前局面和时间线
+   * @private
+   */
+  _restoreSnapshot(snapshot) {
+    this.currentSudoku = snapshot.sudoku;
+    this.history = cloneHistory(snapshot.history);
+    this.currentIndex = snapshot.index;
   }
 
   /**
@@ -591,19 +525,7 @@ export class Game {
    * @private
    */
   _cloneHistory(history) {
-    return history.map(operation => ({
-      type: operation.type,
-      move: { ...operation.move },
-      previousValue: operation.previousValue,
-    }));
-  }
-
-  /**
-   * 为棋盘生成稳定签名
-   * @private
-   */
-  _gridFingerprint(grid) {
-    return grid.flat().join('');
+    return cloneHistory(history);
   }
 }
 
@@ -745,85 +667,14 @@ function restoreExploreSessionIfPresent(game, exploreJson) {
     return;
   }
 
-  if (!Number.isInteger(exploreJson.startIndex) || exploreJson.startIndex < 0 || exploreJson.startIndex > game.history.length) {
+  const exploreSession = ExploreSession.fromJSON(exploreJson);
+  if (!exploreSession) {
+    return;
+  }
+
+  if (exploreSession.startIndex > game.history.length) {
     throw new Error('Invalid Game JSON payload: explore.startIndex out of bounds');
   }
 
-  const startSudoku = createSudokuFromJSON(exploreJson.startSudoku);
-  const startHistory = Array.isArray(exploreJson.startHistory)
-    ? exploreJson.startHistory.map(operation => {
-      if (!operation || typeof operation !== 'object' || operation.type !== 'guess' || !operation.move) {
-        throw new Error('Invalid Game JSON payload: malformed explore.startHistory operation');
-      }
-
-      const { row, col, value } = operation.move;
-      if (!Number.isInteger(row) || !Number.isInteger(col) || row < 0 || row > 8 || col < 0 || col > 8) {
-        throw new Error('Invalid Game JSON payload: explore move position out of range');
-      }
-      if (!Number.isInteger(value) || value < 0 || value > 9) {
-        throw new Error('Invalid Game JSON payload: explore move value out of range');
-      }
-      if (!Number.isInteger(operation.previousValue) || operation.previousValue < 0 || operation.previousValue > 9) {
-        throw new Error('Invalid Game JSON payload: explore previousValue out of range');
-      }
-
-      return {
-        type: 'guess',
-        move: { ...operation.move },
-        previousValue: operation.previousValue,
-      };
-    })
-    : [];
-
-  const failedFingerprints = Array.isArray(exploreJson.failedFingerprints)
-    ? new Set(exploreJson.failedFingerprints.filter(item => typeof item === 'string'))
-    : new Set();
-
-  const allowedStatus = new Set(['active', 'conflict', 'revisited-failed']);
-  const status = allowedStatus.has(exploreJson.status) ? exploreJson.status : 'active';
-
-  const branches = new Map();
-  let currentBranchId = 0;
-  let nextBranchId = 1;
-
-  if (Array.isArray(exploreJson.branches)) {
-    for (const b of exploreJson.branches) {
-      if (!b || typeof b !== 'object' || !Number.isInteger(b.id)) continue;
-      const branchSudoku = createSudokuFromJSON(b.sudoku);
-      branches.set(b.id, {
-        id: b.id,
-        parentId: typeof b.parentId === 'number' ? b.parentId : null,
-        label: String(b.label || `branch-${b.id}`),
-        sudoku: branchSudoku,
-        history: Array.isArray(b.history) ? b.history.map(op => ({ ...op })) : [],
-        index: Number.isInteger(b.index) ? b.index : exploreJson.startIndex,
-      });
-      currentBranchId = b.id === exploreJson.currentBranchId ? b.id : currentBranchId;
-      nextBranchId = Math.max(nextBranchId, b.id + 1);
-    }
-  }
-
-  if (!branches.size) {
-    branches.set(0, {
-      id: 0,
-      parentId: null,
-      label: 'root',
-      sudoku: startSudoku.clone(),
-      history: startHistory.slice(),
-      index: exploreJson.startIndex,
-    });
-    currentBranchId = 0;
-    nextBranchId = 1;
-  }
-
-  game.exploreSession = {
-    startSudoku,
-    startHistory,
-    startIndex: exploreJson.startIndex,
-    failedFingerprints,
-    status,
-    branches,
-    currentBranchId,
-    nextBranchId,
-  };
+  game.exploreSession = exploreSession;
 }
